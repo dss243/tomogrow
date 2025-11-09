@@ -2,4 +2,4 @@ streamlit
 supabase
 pandas
 plotly
-paho-mqtt
+streamlit-autorefresh
