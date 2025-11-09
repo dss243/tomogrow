@@ -65,11 +65,19 @@ def get_latest_esp32_data():
                 .order("timestamp", desc=True)\
                 .limit(1)\
                 .execute()
-            if response.data:
+            
+            # Debug: print what we're getting
+            st.write("🔍 Debug - Raw response:", response)
+            
+            if response.data and len(response.data) > 0:
+                st.write("🔍 Debug - Data found:", response.data[0])
                 return response.data[0]
+            else:
+                st.write("🔍 Debug - No data in response")
+                return None
     except Exception as e:
-        pass
-    return None
+        st.error(f"❌ Error fetching data: {e}")
+        return None
 
 def get_historical_data(limit=50):
     """Get historical data from Supabase"""
@@ -77,27 +85,43 @@ def get_historical_data(limit=50):
         if supabase_client:
             response = supabase_client.table("sensor_data")\
                 .select("*")\
+                .eq("device_id", "ESP32_TOMOGROW_001")\
                 .order("timestamp", desc=True)\
                 .limit(limit)\
                 .execute()
-            return response.data
+            
+            st.write(f"🔍 Debug - Historical data count: {len(response.data) if response.data else 0}")
+            return response.data if response.data else []
         return []
     except Exception as e:
-        if "does not exist" in str(e):
-            return []
+        st.error(f"Error fetching historical data: {e}")
         return []
 
 # Dashboard UI
 st.title("🌱 Smart Irrigation Monitoring Dashboard")
 st.markdown("---")
 
-# Auto-refresh using streamlit_autorefresh
+# Auto-refresh
 try:
     from streamlit_autorefresh import st_autorefresh
-    # Run autorefresh every 10 seconds (10000 milliseconds)
     st_autorefresh(interval=10000, key="data_refresh")
+    st.success("🔄 Auto-refresh enabled (10 seconds)")
 except:
     st.info("🔄 Auto-refresh not available. Refresh page manually for updates.")
+
+# Debug section
+with st.expander("🔧 Debug Information"):
+    st.write("Checking Supabase connection...")
+    if supabase_client:
+        st.success("✅ Supabase client initialized")
+        # Test connection
+        try:
+            test_data = get_historical_data(limit=1)
+            st.write(f"Test query result: {len(test_data)} records")
+        except Exception as e:
+            st.error(f"Test query failed: {e}")
+    else:
+        st.error("❌ Supabase client not initialized")
 
 # Live Data Section
 st.header("📡 Live ESP32 Data")
@@ -108,27 +132,34 @@ if latest_data:
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("🌡️ Temperature", f"{latest_data.get('temperature', 0):.1f}°C")
+        temperature = latest_data.get('temperature', 0)
+        st.metric("🌡️ Temperature", f"{temperature:.1f}°C")
     
     with col2:
-        st.metric("💧 Humidity", f"{latest_data.get('humidity', 0):.1f}%")
+        humidity = latest_data.get('humidity', 0)
+        st.metric("💧 Humidity", f"{humidity:.1f}%")
     
     with col3:
         soil_moisture = latest_data.get('soil_moisture', 0)
         st.metric("🌱 Soil Moisture", f"{soil_moisture:.1f}%")
     
     with col4:
-        st.metric("💡 Light", f"{latest_data.get('light_intensity', 0)}")
+        light_intensity = latest_data.get('light_intensity', 0)
+        st.metric("💡 Light", f"{light_intensity}")
     
     # Make prediction
     prediction = predict_irrigation(
-        latest_data.get('temperature', 0),
+        temperature,
         soil_moisture,
-        latest_data.get('humidity', 0),
-        latest_data.get('light_intensity', 0)
+        humidity,
+        light_intensity
     )
     
-    st.success(f"🤖 **AI Prediction:** {prediction['irrigation_decision'].upper()} (Confidence: {prediction['confidence_level']:.1%})")
+    # Show prediction with color coding
+    if prediction['irrigation_decision'] == 'yes':
+        st.error(f"🚨 **IRRIGATION NEEDED:** {prediction['irrigation_decision'].upper()} (Confidence: {prediction['confidence_level']:.1%})")
+    else:
+        st.success(f"✅ **NO IRRIGATION NEEDED:** {prediction['irrigation_decision'].upper()} (Confidence: {prediction['confidence_level']:.1%})")
     
     # Show when data was last updated
     if 'timestamp' in latest_data:
@@ -136,8 +167,8 @@ if latest_data:
         st.caption(f"Last updated: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
     
 else:
-    st.info("📡 Waiting for ESP32 data...")
-    st.info("Make sure your ESP32 is running and sending data to Supabase")
+    st.warning("📡 Waiting for ESP32 data...")
+    st.info("If you see data in the debug section above but not here, there might be a device_id mismatch.")
     
     # Show sample data for testing
     with st.expander("Test with sample data"):
@@ -146,16 +177,21 @@ else:
         sample_moisture = st.slider("Sample Soil Moisture", 0.0, 100.0, 60.0)
         
         sample_prediction = predict_irrigation(sample_temp, sample_moisture, 65, 500)
-        st.info(f"Sample Prediction: {sample_prediction['irrigation_decision'].upper()} (Confidence: {sample_prediction['confidence_level']:.1%})")
+        if sample_prediction['irrigation_decision'] == 'yes':
+            st.error(f"Sample Prediction: {sample_prediction['irrigation_decision'].upper()} (Confidence: {sample_prediction['confidence_level']:.1%})")
+        else:
+            st.success(f"Sample Prediction: {sample_prediction['irrigation_decision'].upper()} (Confidence: {sample_prediction['confidence_level']:.1%})")
 
 # Historical Data Section
 st.markdown("---")
 st.header("📊 Historical Data")
 
 historical_data = get_historical_data()
-if historical_data:
+if historical_data and len(historical_data) > 0:
     df = pd.DataFrame(historical_data)
     df['timestamp'] = pd.to_datetime(df['timestamp'])
+    
+    st.success(f"✅ Found {len(df)} historical records")
     
     tab1, tab2, tab3 = st.tabs(["Soil Moisture", "Temperature & Humidity", "Data Table"])
     
@@ -181,7 +217,9 @@ if historical_data:
         st.plotly_chart(fig_humidity, use_container_width=True)
     
     with tab3:
-        st.dataframe(df[['timestamp', 'device_id', 'temperature', 'humidity', 'soil_moisture', 'light_intensity']].head(20))
+        # Sort by timestamp descending for better viewing
+        df_display = df.sort_values('timestamp', ascending=False)
+        st.dataframe(df_display[['timestamp', 'device_id', 'temperature', 'humidity', 'soil_moisture', 'light_intensity']].head(20))
         
 else:
     st.info("No historical data yet. ESP32 data will appear here automatically.")
@@ -196,7 +234,7 @@ with col1:
     st.subheader("Quick Test")
     if st.button("Test Dry Soil (Needs Irrigation)"):
         prediction = predict_irrigation(30, 35, 60, 500)
-        st.success(f"Dry Soil: {prediction['irrigation_decision'].upper()} (Confidence: {prediction['confidence_level']:.1%})")
+        st.error(f"Dry Soil: {prediction['irrigation_decision'].upper()} (Confidence: {prediction['confidence_level']:.1%})")
     
     if st.button("Test Wet Soil (No Irrigation)"):
         prediction = predict_irrigation(25, 90, 60, 500)
@@ -210,7 +248,10 @@ with col2:
         
         if st.form_submit_button("Get Prediction"):
             custom_prediction = predict_irrigation(custom_temp, custom_moisture, 65, 500)
-            st.info(f"Custom Prediction: {custom_prediction['irrigation_decision'].upper()} (Confidence: {custom_prediction['confidence_level']:.1%})")
+            if custom_prediction['irrigation_decision'] == 'yes':
+                st.error(f"Custom Prediction: {custom_prediction['irrigation_decision'].upper()} (Confidence: {custom_prediction['confidence_level']:.1%})")
+            else:
+                st.success(f"Custom Prediction: {custom_prediction['irrigation_decision'].upper()} (Confidence: {custom_prediction['confidence_level']:.1%})")
 
 # System Status
 st.markdown("---")
