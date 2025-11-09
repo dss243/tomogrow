@@ -45,13 +45,6 @@ def load_ml_model():
                 with open(model_path, 'rb') as file:
                     model_data = pickle.load(file)
                 
-                # Debug: Check what's in the model data
-                st.sidebar.write("🔍 Model Data Keys:", list(model_data.keys()))
-                if 'feature_names' in model_data:
-                    st.sidebar.write("📋 Training Features:", model_data['feature_names'])
-                if 'scaler' in model_data:
-                    st.sidebar.write("⚖️ Scaler expects features:", model_data['scaler'].n_features_in_)
-                
                 st.success(f"✅ ML Model Loaded from: {model_path}")
                 return model_data
         except Exception as e:
@@ -64,36 +57,42 @@ def load_ml_model():
 supabase_client = init_supabase()
 ml_model_data = load_ml_model()
 
-def predict_irrigation_ml(temperature, soil_moisture, humidity, light_intensity):
+def predict_irrigation_ml(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
     """Use your trained Random Forest model for prediction"""
     if ml_model_data is None:
         return predict_irrigation_rules(temperature, soil_moisture, humidity, light_intensity)
     
     try:
-        # Check what features the model expects
+        # Get model components
         model = ml_model_data['model']
         scaler = ml_model_data['scaler']
+        crop_encoder = ml_model_data.get('crop_encoder')
+        feature_names = ml_model_data.get('feature_names', [])
         
-        # Debug information
-        st.sidebar.write("🤖 Model expects features:", scaler.n_features_in_)
-        
-        # Handle different feature scenarios
-        if scaler.n_features_in_ == 5:
-            # Your model was trained with 5 features - we need to identify the 5th one
-            # Common additional features: air_quality, crop_type_encoded, season, etc.
-            # For now, we'll add a default value for the 5th feature
-            st.sidebar.info("Model expects 5 features - using default for missing feature")
-            
-            # Try different possible 5th features
-            features = np.array([[temperature, soil_moisture, humidity, light_intensity, 0.5]])  # Default value
-        elif scaler.n_features_in_ == 4:
-            # Standard 4 features
-            features = np.array([[temperature, soil_moisture, humidity, light_intensity]])
+        # Encode crop type using the same encoder from training
+        if crop_encoder is not None:
+            try:
+                # Transform crop type to encoded value
+                crop_encoded = crop_encoder.transform([crop_type])[0]
+            except:
+                # If crop type not in encoder, use default (tomato)
+                st.sidebar.warning(f"Crop type '{crop_type}' not in encoder, using default")
+                crop_encoded = 0  # Default to tomato
         else:
-            st.error(f"Unexpected number of features: {scaler.n_features_in_}")
-            return predict_irrigation_rules(temperature, soil_moisture, humidity, light_intensity)
+            # If no encoder, use simple mapping
+            crop_mapping = {'tomato': 0, 'cucumber': 1, 'pepper': 2, 'lettuce': 3}
+            crop_encoded = crop_mapping.get(crop_type.lower(), 0)
         
-        # Scale features
+        # Prepare features in EXACT same order as training
+        features = np.array([[
+            temperature,      # Temperature
+            soil_moisture,    # Soil_Moisture  
+            humidity,         # Humidity
+            light_intensity,  # Light_Intensity
+            crop_encoded      # Crop_Type_encoded
+        ]])
+        
+        # Scale features using the same scaler from training
         features_scaled = scaler.transform(features)
         
         # Make prediction
@@ -103,14 +102,17 @@ def predict_irrigation_ml(temperature, soil_moisture, humidity, light_intensity)
         # Get confidence
         confidence = np.max(probabilities)
         
-        # Map prediction to decision
-        decision = "yes" if prediction == 1 else "no"
+        # Map prediction to decision (using pump_encoder if available)
+        pump_encoder = ml_model_data.get('pump_encoder')
+        if pump_encoder is not None:
+            decision = pump_encoder.inverse_transform([prediction])[0]
+        else:
+            decision = "yes" if prediction == 1 else "no"
         
         # Get feature importance if available
         feature_importance = None
-        if hasattr(model, 'feature_importances_'):
-            feature_importance = dict(zip([f'feature_{i}' for i in range(len(model.feature_importances_))], 
-                                        model.feature_importances_))
+        if hasattr(model, 'feature_importances_') and feature_names:
+            feature_importance = dict(zip(feature_names, model.feature_importances_))
         
         return {
             'irrigation_prediction': decision,
@@ -123,7 +125,8 @@ def predict_irrigation_ml(temperature, soil_moisture, humidity, light_intensity)
                 'yes': probabilities[1]
             },
             'feature_importance': feature_importance,
-            'features_used': scaler.n_features_in_
+            'crop_type': crop_type,
+            'crop_encoded': crop_encoded
         }
         
     except Exception as e:
@@ -211,17 +214,29 @@ def create_timestamp_column(df):
 st.title("🌱 Smart Irrigation AI Dashboard")
 st.markdown("---")
 
-# Model Status Banner
+# Model Information Sidebar
+st.sidebar.header("🤖 ML Model Information")
 if ml_model_data:
-    # Check feature dimensions
-    if 'scaler' in ml_model_data:
-        expected_features = ml_model_data['scaler'].n_features_in_
-        if expected_features == 5:
-            st.warning("🤖 **ML Model Active** (5 features expected - using default for missing feature)")
-        else:
-            st.success(f"🎯 **ML Model Active**: Random Forest ({expected_features} features)")
+    st.sidebar.success("**Random Forest Classifier**")
+    st.sidebar.write(f"**Accuracy:** {ml_model_data.get('training_accuracy', '100.0%')}")
+    st.sidebar.write(f"**Model Type:** {ml_model_data.get('model_type', 'RandomForest')}")
+    
+    if 'feature_names' in ml_model_data:
+        st.sidebar.subheader("📋 Training Features")
+        for i, feature in enumerate(ml_model_data['feature_names']):
+            st.sidebar.write(f"{i+1}. {feature}")
+    
+    # Crop type selection
+    st.sidebar.subheader("🌱 Crop Selection")
+    crop_type = st.sidebar.selectbox(
+        "Select crop type:",
+        ["tomato", "cucumber", "pepper", "lettuce"],
+        index=0
+    )
+    st.sidebar.info(f"Current crop: **{crop_type}**")
 else:
-    st.warning("⚡ **Rule-Based System**: Using expert rules")
+    st.sidebar.warning("Using Rule-Based System")
+    crop_type = "tomato"
 
 # Auto-refresh
 try:
@@ -238,7 +253,7 @@ latest_data = get_latest_esp32_data()
 
 if latest_data:
     # Display metrics
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         temperature = latest_data.get('temperature', 0)
@@ -272,13 +287,17 @@ if latest_data:
         else:
             st.metric("💡 Light", "N/A")
     
+    with col5:
+        st.metric("🌿 Crop Type", crop_type.title())
+
     # AI Prediction with ML Model
     if all(key in latest_data and latest_data[key] is not None for key in ['temperature', 'soil_moisture', 'humidity', 'light_intensity']):
         prediction = predict_irrigation_ml(
             float(latest_data['temperature']),
             float(latest_data['soil_moisture']),
             float(latest_data['humidity']),
-            int(latest_data['light_intensity'])
+            int(latest_data['light_intensity']),
+            crop_type
         )
         
         # Enhanced prediction display
@@ -299,20 +318,24 @@ if latest_data:
             
             # Model used
             st.write(f"**Model:** {prediction['model_used']}")
-            if 'features_used' in prediction:
-                st.write(f"**Features:** {prediction['features_used']}")
+            st.write(f"**Crop:** {prediction['crop_type']}")
         
         with pred_col2:
             with st.expander("📊 Prediction Details"):
                 if 'probabilities' in prediction:
                     st.write("**Class Probabilities:**")
-                    st.write(f"• No Irrigation: {prediction['probabilities']['no']:.1%}")
-                    st.write(f"• Yes Irrigation: {prediction['probabilities']['yes']:.1%}")
+                    col_prob1, col_prob2 = st.columns(2)
+                    with col_prob1:
+                        st.metric("No Irrigation", f"{prediction['probabilities']['no']:.1%}")
+                    with col_prob2:
+                        st.metric("Yes Irrigation", f"{prediction['probabilities']['yes']:.1%}")
                 
                 if prediction.get('feature_importance'):
                     st.write("**Feature Importance:**")
                     for feature, importance in prediction['feature_importance'].items():
                         st.write(f"• {feature}: {importance:.3f}")
+                
+                st.write(f"**Crop Encoded:** {prediction.get('crop_encoded', 'N/A')}")
 
     else:
         st.warning("⚠️ Incomplete data for AI prediction")
@@ -322,7 +345,7 @@ else:
 
 # Model Testing Section
 st.markdown("---")
-st.header("🧪 Test ML Model")
+st.header("🧪 Test ML Model with Different Crops")
 
 col1, col2 = st.columns(2)
 
@@ -331,6 +354,8 @@ with col1:
     
     scenario = st.selectbox("Choose scenario:", 
                            ["Normal Day", "Hot & Dry", "Cool & Wet", "Extreme Dry", "Optimal Conditions"])
+    
+    test_crop = st.selectbox("Crop for test:", ["tomato", "cucumber", "pepper", "lettuce"], key="test_crop")
     
     if st.button("Run ML Prediction"):
         scenarios = {
@@ -342,9 +367,10 @@ with col1:
         }
         
         temp, moisture, hum, light = scenarios[scenario]
-        prediction = predict_irrigation_ml(temp, moisture, hum, light)
+        prediction = predict_irrigation_ml(temp, moisture, hum, light, test_crop)
         
         st.write(f"**Scenario:** {scenario}")
+        st.write(f"**Crop:** {test_crop.title()}")
         st.write(f"**Conditions:** {temp}°C, {moisture}% soil, {hum}% humidity, {light} light")
         
         if prediction['irrigation_decision'] == 'yes':
@@ -362,12 +388,13 @@ with col2:
         with c1:
             custom_temp = st.slider("Temperature (°C)", 0.0, 50.0, 25.0, key="ml_temp")
             custom_moisture = st.slider("Soil Moisture (%)", 0.0, 100.0, 60.0, key="ml_moisture")
+            custom_crop = st.selectbox("Crop Type", ["tomato", "cucumber", "pepper", "lettuce"], key="form_crop")
         with c2:
             custom_humidity = st.slider("Humidity (%)", 0.0, 100.0, 65.0, key="ml_humidity")
             custom_light = st.slider("Light Intensity", 0, 1000, 500, key="ml_light")
         
         if st.form_submit_button("Run ML Analysis"):
-            prediction = predict_irrigation_ml(custom_temp, custom_moisture, custom_humidity, custom_light)
+            prediction = predict_irrigation_ml(custom_temp, custom_moisture, custom_humidity, custom_light, custom_crop)
             
             st.write("### 🔬 ML Analysis Results")
             
@@ -378,6 +405,7 @@ with col2:
             
             st.write(f"**Confidence Level:** {prediction['confidence_level']:.1%}")
             st.write(f"**Model Used:** {prediction['model_used']}")
+            st.write(f"**Crop Type:** {prediction['crop_type'].title()}")
             
             if 'probabilities' in prediction:
                 st.write("**Class Probabilities:**")
@@ -408,11 +436,8 @@ with status_col1:
 with status_col2:
     st.subheader("🤖 AI System")
     if ml_model_data:
-        if 'scaler' in ml_model_data:
-            features = ml_model_data['scaler'].n_features_in_
-            st.success(f"✅ ML Model ({features} features)")
-        else:
-            st.success("✅ ML Model Active")
+        st.success("✅ ML Model Active")
+        st.caption(f"Random Forest (5 features)")
     else:
         st.warning("⚠️ Rule-Based System")
 
@@ -424,9 +449,8 @@ with status_col3:
         st.warning("⚠️ No Data")
 
 with status_col4:
-    st.subheader("⚙️ Settings")
-    if st.button("🔄 Refresh All"):
-        st.rerun()
+    st.subheader("🌱 Current Crop")
+    st.success(f"✅ {crop_type.title()}")
 
 # Footer
 st.markdown("---")
