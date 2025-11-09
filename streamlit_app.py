@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
 import supabase
 import numpy as np
 
@@ -66,18 +66,11 @@ def get_latest_esp32_data():
                 .limit(1)\
                 .execute()
             
-            # Debug: print what we're getting
-            st.write("🔍 Debug - Raw response:", response)
-            
             if response.data and len(response.data) > 0:
-                st.write("🔍 Debug - Data found:", response.data[0])
                 return response.data[0]
-            else:
-                st.write("🔍 Debug - No data in response")
-                return None
     except Exception as e:
-        st.error(f"❌ Error fetching data: {e}")
-        return None
+        st.error(f"Error fetching latest data: {e}")
+    return None
 
 def get_historical_data(limit=50):
     """Get historical data from Supabase"""
@@ -89,13 +82,10 @@ def get_historical_data(limit=50):
                 .order("timestamp", desc=True)\
                 .limit(limit)\
                 .execute()
-            
-            st.write(f"🔍 Debug - Historical data count: {len(response.data) if response.data else 0}")
             return response.data if response.data else []
-        return []
     except Exception as e:
         st.error(f"Error fetching historical data: {e}")
-        return []
+    return []
 
 # Dashboard UI
 st.title("🌱 Smart Irrigation Monitoring Dashboard")
@@ -108,20 +98,6 @@ try:
     st.success("🔄 Auto-refresh enabled (10 seconds)")
 except:
     st.info("🔄 Auto-refresh not available. Refresh page manually for updates.")
-
-# Debug section
-with st.expander("🔧 Debug Information"):
-    st.write("Checking Supabase connection...")
-    if supabase_client:
-        st.success("✅ Supabase client initialized")
-        # Test connection
-        try:
-            test_data = get_historical_data(limit=1)
-            st.write(f"Test query result: {len(test_data)} records")
-        except Exception as e:
-            st.error(f"Test query failed: {e}")
-    else:
-        st.error("❌ Supabase client not initialized")
 
 # Live Data Section
 st.header("📡 Live ESP32 Data")
@@ -168,7 +144,7 @@ if latest_data:
     
 else:
     st.warning("📡 Waiting for ESP32 data...")
-    st.info("If you see data in the debug section above but not here, there might be a device_id mismatch.")
+    st.info("Make sure your ESP32 is running and sending data to Supabase")
     
     # Show sample data for testing
     with st.expander("Test with sample data"):
@@ -190,8 +166,6 @@ historical_data = get_historical_data()
 if historical_data and len(historical_data) > 0:
     df = pd.DataFrame(historical_data)
     df['timestamp'] = pd.to_datetime(df['timestamp'])
-    
-    st.success(f"✅ Found {len(df)} historical records")
     
     tab1, tab2, tab3 = st.tabs(["Soil Moisture", "Temperature & Humidity", "Data Table"])
     
