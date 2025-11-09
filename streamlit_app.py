@@ -10,8 +10,7 @@ st.set_page_config(
 # Now import other packages
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
 import supabase
 import numpy as np
 
@@ -35,9 +34,9 @@ def init_supabase():
 supabase_client = init_supabase()
 
 def predict_irrigation(temperature, soil_moisture, humidity, light_intensity):
-    """Simple rule-based irrigation prediction"""
+    """Simple rule-based irrigation prediction - NO ML NEEDED"""
     
-    # Rule-based logic (no ML needed)
+    # Rule-based logic (better than ML for irrigation)
     if soil_moisture < 45:
         decision = "yes"
         confidence = 0.95
@@ -61,11 +60,7 @@ def predict_irrigation(temperature, soil_moisture, humidity, light_intensity):
         'irrigation_prediction': decision,
         'irrigation_decision': decision,
         'confidence_level': round(confidence, 4),
-        'soil_moisture_level': soil_moisture,
-        'probabilities': {
-            'no': round(1 - confidence if decision == "yes" else confidence, 4),
-            'yes': round(confidence if decision == "yes" else 1 - confidence, 4)
-        }
+        'soil_moisture_level': soil_moisture
     }
 
 def store_sensor_data(data):
@@ -105,23 +100,23 @@ def get_historical_data(limit=50):
         return []
 
 # Dashboard UI
-st.title("🌱 Smart Irrigation Monitoring Dashboard")
+st.title("Smart Irrigation Monitoring Dashboard")
 st.markdown("---")
 
 # Sidebar
-st.sidebar.header("⚙️ Configuration")
+st.sidebar.header("Configuration")
 device_id = st.sidebar.text_input("Device ID", "simulated_001")
 
-st.sidebar.header("📊 Manual Sensor Input")
+st.sidebar.header("Manual Sensor Input")
 with st.sidebar.form("sensor_form"):
     st.subheader("Simulate Sensor Data")
-    temp = st.slider("Temperature (°C)", 0.0, 50.0, 25.0)
+    temp = st.slider("Temperature (C)", 0.0, 50.0, 25.0)
     moisture = st.slider("Soil Moisture (%)", 0.0, 100.0, 60.0)
     humidity = st.slider("Humidity (%)", 0.0, 100.0, 65.0)
     light = st.slider("Light Intensity", 0, 1000, 500)
     crop = st.selectbox("Crop Type", ["tomato", "potato", "lettuce", "cucumber"])
     
-    submitted = st.form_submit_button("📤 Send Sensor Data & Predict")
+    submitted = st.form_submit_button("Send Sensor Data & Predict")
     
     if submitted:
         # Create sensor data
@@ -136,17 +131,16 @@ with st.sidebar.form("sensor_form"):
         
         # Store data
         if store_sensor_data(sensor_data):
-            st.sidebar.success("✅ Data stored successfully!")
+            st.sidebar.success("Data stored successfully!")
             
             # Make prediction
             prediction = predict_irrigation(temp, moisture, humidity, light)
             if prediction:
-                st.sidebar.info(f"**🤖 Irrigation Prediction:** {prediction['irrigation_prediction'].upper()}")
-                st.sidebar.info(f"**🎯 Final Decision:** {prediction['irrigation_decision'].upper()}")
-                st.sidebar.info(f"**📊 Confidence:** {prediction['confidence_level']:.1%}")
-                st.sidebar.info(f"**💧 Soil Moisture:** {moisture}%")
+                st.sidebar.info(f"Irrigation Prediction: {prediction['irrigation_prediction'].upper()}")
+                st.sidebar.info(f"Confidence: {prediction['confidence_level']:.1%}")
+                st.sidebar.info(f"Soil Moisture: {moisture}%")
         else:
-            st.sidebar.error("❌ Failed to store data")
+            st.sidebar.error("Failed to store data")
 
 # Main Dashboard - Current Metrics
 col1, col2, col3, col4 = st.columns(4)
@@ -157,29 +151,29 @@ if historical_data:
     latest = historical_data[0]
     
     with col1:
-        st.metric("🌡️ Temperature", f"{latest['temperature']:.1f}°C")
+        st.metric("Temperature", f"{latest['temperature']:.1f}C")
     
     with col2:
-        st.metric("💧 Soil Moisture", f"{latest['soil_moisture']:.1f}%")
+        st.metric("Soil Moisture", f"{latest['soil_moisture']:.1f}%")
     
     with col3:
-        st.metric("💨 Humidity", f"{latest['humidity']:.1f}%")
+        st.metric("Humidity", f"{latest['humidity']:.1f}%")
     
     with col4:
-        st.metric("☀️ Light", f"{latest['light_intensity']}")
+        st.metric("Light", f"{latest['light_intensity']}")
 else:
     with col1:
-        st.metric("🌡️ Temperature", "N/A")
+        st.metric("Temperature", "N/A")
     with col2:
-        st.metric("💧 Soil Moisture", "N/A")
+        st.metric("Soil Moisture", "N/A")
     with col3:
-        st.metric("💨 Humidity", "N/A")
+        st.metric("Humidity", "N/A")
     with col4:
-        st.metric("☀️ Light", "N/A")
+        st.metric("Light", "N/A")
 
 # Charts Section
 st.markdown("---")
-st.header("📈 Historical Trends")
+st.header("Historical Trends")
 
 historical_data = get_historical_data(limit=100)
 if historical_data:
@@ -195,16 +189,13 @@ if historical_data:
             title='Soil Moisture Over Time',
             labels={'soil_moisture': 'Soil Moisture (%)', 'timestamp': 'Time'}
         )
-        fig_moisture.add_hrect(y0=0, y1=45, fillcolor="red", opacity=0.1, line_width=0, annotation_text="Irrigation Needed")
-        fig_moisture.add_hrect(y0=45, y1=85, fillcolor="green", opacity=0.1, line_width=0, annotation_text="Optimal Range")
-        fig_moisture.add_hrect(y0=85, y1=100, fillcolor="yellow", opacity=0.1, line_width=0, annotation_text="Too Wet")
         st.plotly_chart(fig_moisture, use_container_width=True)
     
     with tab2:
         fig_temp = px.line(
             df, x='timestamp', y='temperature',
             title='Temperature Over Time',
-            labels={'temperature': 'Temperature (°C)', 'timestamp': 'Time'}
+            labels={'temperature': 'Temperature (C)', 'timestamp': 'Time'}
         )
         st.plotly_chart(fig_temp, use_container_width=True)
     
@@ -225,139 +216,29 @@ if historical_data:
         st.plotly_chart(fig_light, use_container_width=True)
 
 else:
-    st.info("📝 No historical data yet. Use the sidebar to simulate sensor data!")
-
-# Prediction History
-st.markdown("---")
-st.header("🤖 AI Prediction History")
-
-# Show recent predictions based on stored data
-historical_data = get_historical_data(limit=10)
-if historical_data:
-    predictions = []
-    for data in historical_data:
-        prediction = predict_irrigation(
-            data['temperature'], 
-            data['soil_moisture'],
-            data['humidity'],
-            data['light_intensity']
-        )
-        predictions.append({
-            'timestamp': data['timestamp'],
-            'temperature': f"{data['temperature']:.1f}°C",
-            'soil_moisture': f"{data['soil_moisture']:.1f}%",
-            'irrigation_prediction': prediction['irrigation_prediction'].upper(),
-            'irrigation_decision': prediction['irrigation_decision'].upper(),
-            'confidence_level': f"{prediction['confidence_level']:.1%}"
-        })
-    
-    pred_df = pd.DataFrame(predictions)
-    pred_df['timestamp'] = pd.to_datetime(pred_df['timestamp'])
-    st.dataframe(pred_df, use_container_width=True)
-
-# Real-time Data Simulation
-st.markdown("---")
-st.header("🔄 Real-time Simulation")
-
-if st.button("🎬 Start Live Simulation"):
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    results_container = st.container()
-    
-    with results_container:
-        st.subheader("Simulation Results")
-        
-    for i in range(5):
-        progress = (i + 1) / 5
-        progress_bar.progress(progress)
-        
-        # Generate random sensor data
-        sim_data = {
-            'crop_type': 'tomato',
-            'temperature': max(10, min(40, np.random.normal(25, 5))),
-            'soil_moisture': max(20, min(95, np.random.normal(60, 15))),
-            'humidity': max(30, min(90, np.random.normal(65, 10))),
-            'light_intensity': max(100, min(900, np.random.normal(500, 100))),
-            'device_id': 'simulation'
-        }
-        
-        # Store data
-        store_sensor_data(sim_data)
-        
-        # Make prediction
-        prediction = predict_irrigation(
-            sim_data['temperature'], 
-            sim_data['soil_moisture'],
-            sim_data['humidity'],
-            sim_data['light_intensity']
-        )
-        
-        status_text.text(f"📊 Simulation {i+1}/5 - Decision: {prediction['irrigation_decision'].upper()} (Confidence: {prediction['confidence_level']:.1%})")
-        
-        # Show results
-        with results_container:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"**Sample {i+1} Data:**")
-                st.json(sim_data)
-            with col2:
-                st.write("**AI Prediction:**")
-                st.json(prediction)
-            st.markdown("---")
-    
-    progress_bar.empty()
-    status_text.success("✅ Simulation completed! Check historical data above.")
+    st.info("No historical data yet. Use the sidebar to simulate sensor data!")
 
 # System Status
 st.markdown("---")
-st.header("🔧 System Status")
+st.header("System Status")
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Database Connection")
     if supabase_client:
-        st.success("✅ Connected to Supabase")
+        st.success("Connected to Supabase")
     else:
-        st.error("❌ Not connected to Supabase")
+        st.error("Not connected to Supabase")
 
 with col2:
     st.subheader("Data Storage")
     historical_data = get_historical_data(limit=1)
     if historical_data:
-        st.success(f"✅ Storing data ({len(get_historical_data(limit=1000))} records)")
+        st.success(f"Storing data ({len(get_historical_data(limit=1000))} records)")
     else:
-        st.info("📝 No data stored yet")
-
-with col3:
-    st.subheader("Prediction System")
-    st.success("✅ Rule-based AI Active")
-
-# Quick Test Section
-st.markdown("---")
-st.header("🧪 Quick Test")
-
-test_col1, test_col2, test_col3 = st.columns(3)
-
-with test_col1:
-    if st.button("Test Dry Soil"):
-        prediction = predict_irrigation(25, 35, 60, 500)
-        st.write(f"Decision: **{prediction['irrigation_decision'].upper()}**")
-        st.write(f"Confidence: **{prediction['confidence_level']:.1%}**")
-
-with test_col2:
-    if st.button("Test Wet Soil"):
-        prediction = predict_irrigation(25, 90, 60, 500)
-        st.write(f"Decision: **{prediction['irrigation_decision'].upper()}**")
-        st.write(f"Confidence: **{prediction['confidence_level']:.1%}**")
-
-with test_col3:
-    if st.button("Test Optimal Soil"):
-        prediction = predict_irrigation(25, 65, 60, 500)
-        st.write(f"Decision: **{prediction['irrigation_decision'].upper()}**")
-        st.write(f"Confidence: **{prediction['confidence_level']:.1%}**")
+        st.info("No data stored yet")
 
 # Footer
 st.markdown("---")
-st.markdown("### 💧 Smart Irrigation System | 🤖 AI-Powered Decisions")
-st.markdown("*Real-time monitoring and intelligent irrigation predictions*")
+st.markdown("Smart Irrigation System | AI-Powered Decisions")
