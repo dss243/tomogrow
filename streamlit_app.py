@@ -1,17 +1,19 @@
 import streamlit as st
+
+# Page config MUST be first
+st.set_page_config(
+    page_title="Smart Irrigation Dashboard",
+    page_icon="💧",
+    layout="wide"
+)
+
+# Now import other packages
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import supabase
 import numpy as np
-
-# Page config
-st.set_page_config(
-    page_title="Smart Irrigation Dashboard",
-    page_icon="💧",
-    layout="wide"
-)
 
 # Initialize session state
 if 'sensor_data' not in st.session_state:
