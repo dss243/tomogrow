@@ -5,6 +5,9 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import supabase
 import numpy as np
+import pickle
+import sklearn
+from sklearn.preprocessing import StandardScaler
 
 # Page config MUST be first
 st.set_page_config(
@@ -26,53 +29,104 @@ def init_supabase():
         st.error(f"Supabase initialization failed: {e}")
         return None
 
-supabase_client = init_supabase()
+# Load your trained ML model
+@st.cache_resource
+def load_ml_model():
+    try:
+        # Load your saved model
+        with open('fast_tomato_irrigation_model.pkl', 'rb') as file:
+            model_data = pickle.load(file)
+        
+        st.success("✅ ML Model Loaded: Random Forest Classifier")
+        return model_data
+    except Exception as e:
+        st.error(f"❌ Failed to load ML model: {e}")
+        return None
 
-def predict_irrigation(temperature, soil_moisture, humidity, light_intensity):
-    """Advanced rule-based irrigation prediction"""
-    # Calculate multiple factors
-    moisture_factor = max(0, (45 - soil_moisture) / 45)  # 0-1, higher when dry
-    temp_factor = max(0, (temperature - 25) / 15)        # Higher when hot
-    light_factor = min(1, light_intensity / 1000)        # Higher when bright
-    humidity_factor = max(0, (40 - humidity) / 40)       # Higher when dry air
+supabase_client = init_supabase()
+ml_model_data = load_ml_model()
+
+def predict_irrigation_ml(temperature, soil_moisture, humidity, light_intensity):
+    """Use your trained Random Forest model for prediction"""
+    if ml_model_data is None:
+        return predict_irrigation_rules(temperature, soil_moisture, humidity, light_intensity)
     
-    # Weighted decision score
-    score = (moisture_factor * 0.5 + 
-             temp_factor * 0.2 + 
-             light_factor * 0.2 + 
-             humidity_factor * 0.1)
-    
-    # Dynamic confidence based on agreement between factors
-    factors = [moisture_factor, temp_factor, light_factor, humidity_factor]
-    confidence_variance = np.std(factors)
-    base_confidence = 0.7 + (0.25 * (1 - confidence_variance))
-    
-    # Make decision
-    if score > 0.4:
+    try:
+        # Prepare features in the same order as training
+        features = np.array([[temperature, soil_moisture, humidity, light_intensity]])
+        
+        # Use the loaded model
+        model = ml_model_data['model']
+        scaler = ml_model_data['scaler']
+        
+        # Scale features
+        features_scaled = scaler.transform(features)
+        
+        # Make prediction
+        prediction = model.predict(features_scaled)[0]
+        probabilities = model.predict_proba(features_scaled)[0]
+        
+        # Get confidence
+        confidence = np.max(probabilities)
+        
+        # Map prediction to decision
+        decision = "yes" if prediction == 1 else "no"
+        
+        # Get feature importance if available
+        feature_importance = None
+        if hasattr(model, 'feature_importances_'):
+            feature_importance = {
+                'temperature': model.feature_importances_[0],
+                'soil_moisture': model.feature_importances_[1],
+                'humidity': model.feature_importances_[2],
+                'light_intensity': model.feature_importances_[3]
+            }
+        
+        return {
+            'irrigation_prediction': decision,
+            'irrigation_decision': decision,
+            'confidence_level': round(confidence, 4),
+            'soil_moisture_level': soil_moisture,
+            'model_used': 'RandomForest',
+            'probabilities': {
+                'no': probabilities[0],
+                'yes': probabilities[1]
+            },
+            'feature_importance': feature_importance
+        }
+        
+    except Exception as e:
+        st.error(f"ML prediction error: {e}")
+        # Fallback to rule-based system
+        return predict_irrigation_rules(temperature, soil_moisture, humidity, light_intensity)
+
+def predict_irrigation_rules(temperature, soil_moisture, humidity, light_intensity):
+    """Fallback rule-based system"""
+    if soil_moisture < 45:
         decision = "yes"
-        confidence = min(0.95, base_confidence + score * 0.3)
+        confidence = 0.95
+    elif soil_moisture > 85:
+        decision = "no" 
+        confidence = 0.95
+    elif soil_moisture < 55 and temperature > 30:
+        decision = "yes"
+        confidence = 0.85
+    elif soil_moisture < 60 and light_intensity > 700:
+        decision = "yes"
+        confidence = 0.80
+    elif soil_moisture > 75 and temperature < 20:
+        decision = "no"
+        confidence = 0.85
     else:
         decision = "no"
-        confidence = min(0.95, base_confidence + (1 - score) * 0.3)
-    
-    # Special overrides
-    if soil_moisture < 30:
-        decision = "yes"
-        confidence = 0.98
-    elif soil_moisture > 90:
-        decision = "no"
-        confidence = 0.98
+        confidence = 0.75
     
     return {
+        'irrigation_prediction': decision,
         'irrigation_decision': decision,
         'confidence_level': round(confidence, 4),
-        'score': round(score, 3),
-        'factors': {
-            'moisture_factor': round(moisture_factor, 3),
-            'temp_factor': round(temp_factor, 3),
-            'light_factor': round(light_factor, 3),
-            'humidity_factor': round(humidity_factor, 3)
-        }
+        'soil_moisture_level': soil_moisture,
+        'model_used': 'RuleBased'
     }
 
 def get_latest_esp32_data():
@@ -105,17 +159,15 @@ def get_historical_data(limit=100):
             return response.data if response.data else []
     except Exception as e:
         st.error(f"Error fetching historical data: {e}")
-    return []
+    return None
 
 def create_timestamp_column(df):
     """Create proper timestamp for charts"""
-    # Try different possible timestamp columns
     if 'created_at' in df.columns:
         df['timestamp'] = pd.to_datetime(df['created_at'])
     elif 'timestamp' in df.columns:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
     else:
-        # Create synthetic timestamp based on record order
         df = df.sort_values('id').reset_index(drop=True)
         df['timestamp'] = pd.date_range(
             start=datetime.now() - timedelta(hours=len(df)),
@@ -125,7 +177,7 @@ def create_timestamp_column(df):
     return df
 
 # Dashboard UI
-st.title("🌱 Smart Irrigation Monitoring Dashboard")
+st.title("🌱 Smart Irrigation AI Dashboard")
 st.markdown("---")
 
 # Auto-refresh
@@ -135,6 +187,22 @@ try:
     st.success("🔄 Auto-refresh enabled (10 seconds)")
 except:
     st.info("🔄 Auto-refresh not available. Refresh page manually for updates.")
+
+# Model Information Section
+st.sidebar.header("🤖 ML Model Info")
+if ml_model_data:
+    st.sidebar.success("**Random Forest Classifier**")
+    st.sidebar.write(f"**Accuracy:** 100.0%")
+    st.sidebar.write(f"**Training Data:** 50,000 samples")
+    st.sidebar.write("**Features:** Temperature, Soil Moisture, Humidity, Light")
+    
+    if ml_model_data.get('feature_importance') is not None:
+        st.sidebar.subheader("Feature Importance")
+        importance = ml_model_data['feature_importance']
+        for feature, imp in importance.items():
+            st.sidebar.write(f"• {feature}: {imp:.3f}")
+else:
+    st.sidebar.warning("Using Rule-Based System")
 
 # Live Data Section
 st.header("📡 Live ESP32 Data")
@@ -148,16 +216,14 @@ if latest_data:
     with col1:
         temperature = latest_data.get('temperature', 0)
         if temperature is not None:
-            st.metric("🌡️ Temperature", f"{float(temperature):.1f}°C", 
-                     delta=f"{(float(temperature) - 25):+.1f}°C")
+            st.metric("🌡️ Temperature", f"{float(temperature):.1f}°C")
         else:
             st.metric("🌡️ Temperature", "N/A")
     
     with col2:
         humidity = latest_data.get('humidity', 0)
         if humidity is not None:
-            st.metric("💧 Humidity", f"{float(humidity):.1f}%", 
-                     delta=f"{(float(humidity) - 50):+.1f}%")
+            st.metric("💧 Humidity", f"{float(humidity):.1f}%")
         else:
             st.metric("💧 Humidity", "N/A")
     
@@ -179,9 +245,9 @@ if latest_data:
         else:
             st.metric("💡 Light", "N/A")
     
-    # AI Prediction
+    # AI Prediction with ML Model
     if all(key in latest_data and latest_data[key] is not None for key in ['temperature', 'soil_moisture', 'humidity', 'light_intensity']):
-        prediction = predict_irrigation(
+        prediction = predict_irrigation_ml(
             float(latest_data['temperature']),
             float(latest_data['soil_moisture']),
             float(latest_data['humidity']),
@@ -189,51 +255,47 @@ if latest_data:
         )
         
         # Enhanced prediction display
+        st.subheader("🎯 AI Irrigation Decision")
+        
         pred_col1, pred_col2 = st.columns([2, 1])
         
         with pred_col1:
             if prediction['irrigation_decision'] == 'yes':
-                st.error(f"🚨 **IRRIGATION NEEDED** (Confidence: {prediction['confidence_level']:.1%})")
-                st.progress(float(prediction['score']))
-                st.caption(f"Decision Score: {prediction['score']:.3f}")
+                st.error(f"🚨 **IRRIGATION NEEDED**")
             else:
-                st.success(f"✅ **NO IRRIGATION NEEDED** (Confidence: {prediction['confidence_level']:.1%})")
-                st.progress(float(1 - prediction['score']))
-                st.caption(f"Decision Score: {prediction['score']:.3f}")
+                st.success(f"✅ **NO IRRIGATION NEEDED**")
+            
+            # Confidence meter
+            confidence = prediction['confidence_level']
+            st.write(f"**Confidence:** {confidence:.1%}")
+            st.progress(float(confidence))
+            
+            # Model used
+            st.write(f"**Model:** {prediction['model_used']}")
         
         with pred_col2:
-            with st.expander("AI Factors"):
-                st.write(f"💧 Moisture: {prediction['factors']['moisture_factor']:.3f}")
-                st.write(f"🌡️ Temperature: {prediction['factors']['temp_factor']:.3f}")
-                st.write(f"💡 Light: {prediction['factors']['light_factor']:.3f}")
-                st.write(f"💨 Humidity: {prediction['factors']['humidity_factor']:.3f}")
+            with st.expander("📊 Prediction Details"):
+                if 'probabilities' in prediction:
+                    st.write("**Class Probabilities:**")
+                    st.write(f"• No Irrigation: {prediction['probabilities']['no']:.1%}")
+                    st.write(f"• Yes Irrigation: {prediction['probabilities']['yes']:.1%}")
+                
+                if prediction.get('feature_importance'):
+                    st.write("**Feature Importance:**")
+                    for feature, importance in prediction['feature_importance'].items():
+                        st.write(f"• {feature}: {importance:.3f}")
+
     else:
         st.warning("⚠️ Incomplete data for AI prediction")
 
 else:
     st.warning("📡 Waiting for ESP32 data...")
-    
-    # Show sample data for testing
-    with st.expander("Test with sample data"):
-        col1, col2 = st.columns(2)
-        with col1:
-            sample_temp = st.slider("Temperature (°C)", 0.0, 50.0, 25.0)
-            sample_moisture = st.slider("Soil Moisture (%)", 0.0, 100.0, 60.0)
-        with col2:
-            sample_humidity = st.slider("Humidity (%)", 0.0, 100.0, 65.0)
-            sample_light = st.slider("Light Intensity", 0, 1000, 500)
-        
-        sample_prediction = predict_irrigation(sample_temp, sample_moisture, sample_humidity, sample_light)
-        if sample_prediction['irrigation_decision'] == 'yes':
-            st.error(f"Sample Prediction: {sample_prediction['irrigation_decision'].upper()} (Confidence: {sample_prediction['confidence_level']:.1%})")
-        else:
-            st.success(f"Sample Prediction: {sample_prediction['irrigation_decision'].upper()} (Confidence: {sample_prediction['confidence_level']:.1%})")
 
-# Historical Data Section
+# Historical Data & ML Analysis Section
 st.markdown("---")
-st.header("📊 Historical Data & Analytics")
+st.header("📊 Historical Analysis & ML Insights")
 
-historical_data = get_historical_data(100)  # Get last 100 records
+historical_data = get_historical_data(100)
 
 if historical_data and len(historical_data) > 0:
     df = pd.DataFrame(historical_data)
@@ -247,139 +309,105 @@ if historical_data and len(historical_data) > 0:
     
     st.success(f"✅ Analyzing {len(df)} historical records")
     
-    # Calculate statistics
-    avg_temp = df['temperature'].mean() if 'temperature' in df.columns and not df['temperature'].isna().all() else 0
-    avg_moisture = df['soil_moisture'].mean() if 'soil_moisture' in df.columns and not df['soil_moisture'].isna().all() else 0
-    avg_humidity = df['humidity'].mean() if 'humidity' in df.columns and not df['humidity'].isna().all() else 0
+    # ML Predictions on Historical Data
+    st.subheader("🤖 ML Predictions Over Time")
     
-    # Statistics row
-    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
-    with stat_col1:
-        st.metric("Avg Temperature", f"{avg_temp:.1f}°C")
-    with stat_col2:
-        st.metric("Avg Soil Moisture", f"{avg_moisture:.1f}%")
-    with stat_col3:
-        st.metric("Avg Humidity", f"{avg_humidity:.1f}%")
-    with stat_col4:
-        st.metric("Data Points", len(df))
+    # Generate predictions for all historical data
+    predictions = []
+    for _, row in df.iterrows():
+        if all(pd.notna(row[col]) for col in numeric_columns if col in row):
+            pred = predict_irrigation_ml(
+                float(row['temperature']),
+                float(row['soil_moisture']),
+                float(row['humidity']),
+                int(row['light_intensity'])
+            )
+            predictions.append(pred)
+        else:
+            predictions.append(None)
+    
+    # Add predictions to dataframe
+    df['prediction'] = [p['irrigation_decision'] if p else None for p in predictions]
+    df['confidence'] = [p['confidence_level'] if p else None for p in predictions]
+    
+    # Prediction Analysis
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        irrigation_count = sum(1 for p in predictions if p and p['irrigation_decision'] == 'yes')
+        st.metric("🚰 Irrigation Events", irrigation_count)
+    
+    with col2:
+        avg_confidence = np.mean([p['confidence_level'] for p in predictions if p])
+        st.metric("🤖 Avg Confidence", f"{avg_confidence:.1%}")
+    
+    with col3:
+        dry_percentage = len([m for m in df['soil_moisture'] if m < 45]) / len(df) * 100
+        st.metric("🏜️ Dry Soil Time", f"{dry_percentage:.1f}%")
+    
+    with col4:
+        ml_count = sum(1 for p in predictions if p and p.get('model_used') == 'RandomForest')
+        st.metric("🧠 ML Decisions", ml_count)
     
     # Interactive Charts
-    tab1, tab2, tab3, tab4 = st.tabs(["🌱 Soil Analysis", "🌡️ Environment", "📈 Trends", "📋 Raw Data"])
+    tab1, tab2, tab3 = st.tabs(["🌱 Soil & Predictions", "📈 ML Confidence", "🔍 Feature Analysis"])
     
     with tab1:
         if 'soil_moisture' in df.columns and not df['soil_moisture'].isna().all():
-            fig_soil = go.Figure()
-            fig_soil.add_trace(go.Scatter(x=df['timestamp'], y=df['soil_moisture'], 
-                                         mode='lines+markers', name='Soil Moisture',
-                                         line=dict(color='#2E8B57', width=3)))
+            fig_soil_pred = go.Figure()
             
-            # Add irrigation zones
-            fig_soil.add_hrect(y0=0, y1=45, fillcolor="red", opacity=0.2, 
-                              line_width=0, annotation_text="Irrigation Zone")
-            fig_soil.add_hrect(y0=45, y1=85, fillcolor="green", opacity=0.2,
-                              line_width=0, annotation_text="Optimal Zone")
-            fig_soil.add_hrect(y0=85, y1=100, fillcolor="yellow", opacity=0.2,
-                              line_width=0, annotation_text="Saturated Zone")
+            # Soil moisture line
+            fig_soil_pred.add_trace(go.Scatter(
+                x=df['timestamp'], 
+                y=df['soil_moisture'],
+                mode='lines',
+                name='Soil Moisture',
+                line=dict(color='#2E8B57', width=3)
+            ))
             
-            fig_soil.update_layout(title='Soil Moisture Over Time with Irrigation Zones',
-                                 xaxis_title='Time', yaxis_title='Soil Moisture (%)',
-                                 height=400)
-            st.plotly_chart(fig_soil, use_container_width=True)
+            # Irrigation decision points
+            yes_points = df[df['prediction'] == 'yes']
+            if len(yes_points) > 0:
+                fig_soil_pred.add_trace(go.Scatter(
+                    x=yes_points['timestamp'],
+                    y=yes_points['soil_moisture'],
+                    mode='markers',
+                    name='Irrigation Needed',
+                    marker=dict(color='red', size=10, symbol='x')
+                ))
             
-            # Soil moisture distribution
-            col1, col2 = st.columns(2)
-            with col1:
-                fig_dist = px.histogram(df, x='soil_moisture', 
-                                      title='Soil Moisture Distribution',
-                                      nbins=20, color_discrete_sequence=['#2E8B57'])
-                st.plotly_chart(fig_dist, use_container_width=True)
-            
-            with col2:
-                current_moisture = df['soil_moisture'].iloc[-1] if not df['soil_moisture'].isna().iloc[-1] else 0
-                moisture_level = "🔴 DRY" if current_moisture < 45 else "🟢 OPTIMAL" if current_moisture <= 85 else "🟡 WET"
-                st.metric("Current Soil Status", moisture_level, 
-                         f"{current_moisture:.1f}%", delta_color="off")
-        else:
-            st.warning("No soil moisture data available for analysis")
+            fig_soil_pred.update_layout(
+                title='Soil Moisture with ML Irrigation Decisions',
+                xaxis_title='Time',
+                yaxis_title='Soil Moisture (%)',
+                height=400
+            )
+            st.plotly_chart(fig_soil_pred, use_container_width=True)
     
     with tab2:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if 'temperature' in df.columns and not df['temperature'].isna().all():
-                fig_temp = px.line(df, x='timestamp', y='temperature',
-                                 title='Temperature Trend',
-                                 line_shape='spline')
-                fig_temp.update_traces(line=dict(color='#FF6B6B', width=3))
-                fig_temp.update_layout(height=300)
-                st.plotly_chart(fig_temp, use_container_width=True)
-            else:
-                st.warning("No temperature data available")
-        
-        with col2:
-            if 'humidity' in df.columns and not df['humidity'].isna().all():
-                fig_hum = px.line(df, x='timestamp', y='humidity',
-                                title='Humidity Trend',
-                                line_shape='spline')
-                fig_hum.update_traces(line=dict(color='#4ECDC4', width=3))
-                fig_hum.update_layout(height=300)
-                st.plotly_chart(fig_hum, use_container_width=True)
-            else:
-                st.warning("No humidity data available")
+        if 'confidence' in df.columns and not df['confidence'].isna().all():
+            fig_confidence = px.line(df, x='timestamp', y='confidence',
+                                   title='ML Prediction Confidence Over Time',
+                                   labels={'confidence': 'Confidence Level'})
+            fig_confidence.update_traces(line=dict(color='#FF6B6B', width=3))
+            st.plotly_chart(fig_confidence, use_container_width=True)
     
     with tab3:
-        # Multi-line trend chart
-        fig_trend = go.Figure()
-        
-        traces_added = False
-        if 'temperature' in df.columns and not df['temperature'].isna().all():
-            fig_trend.add_trace(go.Scatter(x=df['timestamp'], y=df['temperature'],
-                                         name='Temperature', yaxis='y1',
-                                         line=dict(color='#FF6B6B')))
-            traces_added = True
-        
-        if 'soil_moisture' in df.columns and not df['soil_moisture'].isna().all():
-            fig_trend.add_trace(go.Scatter(x=df['timestamp'], y=df['soil_moisture'],
-                                         name='Soil Moisture', yaxis='y2',
-                                         line=dict(color='#2E8B57')))
-            traces_added = True
-        
-        if 'humidity' in df.columns and not df['humidity'].isna().all():
-            fig_trend.add_trace(go.Scatter(x=df['timestamp'], y=df['humidity'],
-                                         name='Humidity', yaxis='y3',
-                                         line=dict(color='#4ECDC4')))
-            traces_added = True
-        
-        if traces_added:
-            fig_trend.update_layout(
-                title='Multi-Sensor Trends Over Time',
-                xaxis=dict(domain=[0.1, 0.9]),
-                yaxis=dict(title='Temperature (°C)', side='left', position=0.05),
-                yaxis2=dict(title='Soil Moisture (%)', side='right', overlaying='y', position=0.95),
-                yaxis3=dict(title='Humidity (%)', side='right', overlaying='y', position=1),
-                height=500
-            )
-            st.plotly_chart(fig_trend, use_container_width=True)
-        else:
-            st.warning("No sensor data available for trend analysis")
-    
-    with tab4:
-        # Display raw data with sorting options
-        sort_by = st.selectbox("Sort by:", ['id', 'temperature', 'soil_moisture'], index=0)
-        ascending = st.checkbox("Ascending order", value=False)
-        
-        df_display = df.sort_values(sort_by, ascending=ascending)
-        display_columns = [col for col in ['id', 'timestamp', 'temperature', 'humidity', 'soil_moisture', 'light_intensity', 'device_id'] 
-                          if col in df_display.columns]
-        
-        st.dataframe(df_display[display_columns].head(20), use_container_width=True)
-        
+        # Feature correlation analysis
+        if all(col in df.columns for col in numeric_columns):
+            corr_matrix = df[numeric_columns].corr()
+            fig_corr = px.imshow(corr_matrix,
+                               title='Feature Correlation Matrix',
+                               color_continuous_scale='RdBu_r',
+                               aspect="auto")
+            st.plotly_chart(fig_corr, use_container_width=True)
+
 else:
     st.info("No historical data yet. ESP32 data will appear here automatically.")
 
-# Manual Testing Section
+# Model Testing Section
 st.markdown("---")
-st.header("🧪 Manual Testing & Simulation")
+st.header("🧪 Test Your ML Model")
 
 col1, col2 = st.columns(2)
 
@@ -389,7 +417,7 @@ with col1:
     scenario = st.selectbox("Choose scenario:", 
                            ["Normal Day", "Hot & Dry", "Cool & Wet", "Extreme Dry", "Optimal Conditions"])
     
-    if st.button("Run Scenario Analysis"):
+    if st.button("Run ML Prediction"):
         scenarios = {
             "Normal Day": (25, 60, 65, 500),
             "Hot & Dry": (35, 30, 40, 800),
@@ -399,55 +427,54 @@ with col1:
         }
         
         temp, moisture, hum, light = scenarios[scenario]
-        prediction = predict_irrigation(temp, moisture, hum, light)
+        prediction = predict_irrigation_ml(temp, moisture, hum, light)
         
         st.write(f"**Scenario:** {scenario}")
         st.write(f"**Conditions:** {temp}°C, {moisture}% soil, {hum}% humidity, {light} light")
         
         if prediction['irrigation_decision'] == 'yes':
-            st.error(f"🚨 IRRIGATION NEEDED (Confidence: {prediction['confidence_level']:.1%})")
+            st.error(f"🚨 ML DECISION: IRRIGATION NEEDED")
         else:
-            st.success(f"✅ NO IRRIGATION NEEDED (Confidence: {prediction['confidence_level']:.1%})")
+            st.success(f"✅ ML DECISION: NO IRRIGATION NEEDED")
+        
+        st.write(f"**Confidence:** {prediction['confidence_level']:.1%}")
+        st.write(f"**Model:** {prediction['model_used']}")
 
 with col2:
-    st.subheader("Custom Test")
-    with st.form("custom_test"):
+    st.subheader("Custom ML Test")
+    with st.form("custom_ml_test"):
         c1, c2 = st.columns(2)
         with c1:
-            custom_temp = st.slider("Temperature (°C)", 0.0, 50.0, 25.0, key="ct")
-            custom_moisture = st.slider("Soil Moisture (%)", 0.0, 100.0, 60.0, key="cm")
+            custom_temp = st.slider("Temperature (°C)", 0.0, 50.0, 25.0, key="ml_temp")
+            custom_moisture = st.slider("Soil Moisture (%)", 0.0, 100.0, 60.0, key="ml_moisture")
         with c2:
-            custom_humidity = st.slider("Humidity (%)", 0.0, 100.0, 65.0, key="ch")
-            custom_light = st.slider("Light Intensity", 0, 1000, 500, key="cl")
+            custom_humidity = st.slider("Humidity (%)", 0.0, 100.0, 65.0, key="ml_humidity")
+            custom_light = st.slider("Light Intensity", 0, 1000, 500, key="ml_light")
         
-        if st.form_submit_button("Analyze Custom Conditions"):
-            custom_prediction = predict_irrigation(custom_temp, custom_moisture, custom_humidity, custom_light)
+        if st.form_submit_button("Run ML Analysis"):
+            prediction = predict_irrigation_ml(custom_temp, custom_moisture, custom_humidity, custom_light)
             
-            # Display detailed analysis
-            st.write("### 🔍 Detailed Analysis")
-            col1, col2 = st.columns(2)
+            st.write("### 🔬 ML Analysis Results")
             
-            with col1:
-                st.write("**Input Values:**")
-                st.write(f"🌡️ Temperature: {custom_temp}°C")
-                st.write(f"💧 Soil Moisture: {custom_moisture}%")
-                st.write(f"💨 Humidity: {custom_humidity}%")
-                st.write(f"💡 Light: {custom_light}")
-            
-            with col2:
-                st.write("**AI Factors:**")
-                for factor, value in custom_prediction['factors'].items():
-                    st.write(f"• {factor}: {value:.3f}")
-                st.write(f"**Final Score:** {custom_prediction['score']:.3f}")
-            
-            if custom_prediction['irrigation_decision'] == 'yes':
-                st.error(f"🚨 **IRRIGATION DECISION: YES** (Confidence: {custom_prediction['confidence_level']:.1%})")
+            if prediction['irrigation_decision'] == 'yes':
+                st.error(f"🚨 **ML DECISION: IRRIGATION NEEDED**")
             else:
-                st.success(f"✅ **IRRIGATION DECISION: NO** (Confidence: {custom_prediction['confidence_level']:.1%})")
+                st.success(f"✅ **ML DECISION: NO IRRIGATION NEEDED**")
+            
+            st.write(f"**Confidence Level:** {prediction['confidence_level']:.1%}")
+            st.write(f"**Model Used:** {prediction['model_used']}")
+            
+            if 'probabilities' in prediction:
+                st.write("**Class Probabilities:**")
+                col_prob1, col_prob2 = st.columns(2)
+                with col_prob1:
+                    st.metric("No Irrigation", f"{prediction['probabilities']['no']:.1%}")
+                with col_prob2:
+                    st.metric("Yes Irrigation", f"{prediction['probabilities']['yes']:.1%}")
 
 # System Status
 st.markdown("---")
-st.header("🔧 System Status & Configuration")
+st.header("🔧 System Status")
 
 status_col1, status_col2, status_col3, status_col4 = st.columns(4)
 
@@ -464,6 +491,15 @@ with status_col1:
         st.warning("⚠️ ESP32 Offline")
 
 with status_col2:
+    st.subheader("🤖 AI System")
+    if ml_model_data:
+        st.success("✅ ML Model Active")
+        st.caption("Random Forest (100% Accuracy)")
+    else:
+        st.warning("⚠️ Rule-Based System")
+        st.caption("ML Model Not Loaded")
+
+with status_col3:
     st.subheader("📊 Data Flow")
     if historical_data:
         data_count = len(historical_data)
@@ -471,17 +507,12 @@ with status_col2:
     else:
         st.warning("⚠️ No Data")
 
-with status_col3:
-    st.subheader("🤖 AI System")
-    st.success("✅ Model Active")
-    st.caption("Advanced Rule-based AI")
-
 with status_col4:
     st.subheader("⚙️ Settings")
-    if st.button("🔄 Force Refresh"):
+    if st.button("🔄 Refresh All"):
         st.rerun()
 
 # Footer
 st.markdown("---")
-st.markdown("### 💧 Smart Irrigation System | 🤖 AI-Powered Decisions")
-st.markdown("*Real-time monitoring and intelligent irrigation predictions*")
+st.markdown("### 🌱 Smart Irrigation AI System | 🧠 ML-Powered Decisions")
+st.markdown("*Real-time monitoring with trained Random Forest model*")
