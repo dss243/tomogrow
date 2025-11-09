@@ -1,4 +1,3 @@
-sklearn
 streamlit
 supabase
 pandas
