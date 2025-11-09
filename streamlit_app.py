@@ -1,12 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
 import supabase
 import numpy as np
-import paho.mqtt.client as mqtt
-import json
-import threading
+import time
 
 # Page config MUST be first
 st.set_page_config(
@@ -14,14 +12,6 @@ st.set_page_config(
     page_icon="💧",
     layout="wide"
 )
-
-# MQTT Configuration
-MQTT_BROKER = "broker.hivemq.com"
-MQTT_PORT = 1883
-MQTT_TOPIC = "tomogrow/sensor/data"
-
-# Global variable to store latest sensor data
-latest_sensor_data = None
 
 # Initialize Supabase
 @st.cache_resource
@@ -38,40 +28,6 @@ def init_supabase():
 
 supabase_client = init_supabase()
 
-# MQTT Functions
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        client.subscribe(MQTT_TOPIC)
-    else:
-        st.error(f"MQTT Connection failed with code {rc}")
-
-def on_message(client, userdata, msg):
-    global latest_sensor_data
-    try:
-        data = json.loads(msg.payload.decode())
-        latest_sensor_data = data
-        st.runtime.legacy_caching.clear_cache()  # Refresh the app
-    except Exception as e:
-        st.error(f"MQTT message error: {e}")
-
-def start_mqtt_client():
-    client = mqtt.Client()
-    client.on_connect = on_connect
-    client.on_message = on_message
-    
-    try:
-        client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        client.loop_forever()
-    except Exception as e:
-        st.error(f"MQTT connection failed: {e}")
-
-# Start MQTT in a separate thread
-if 'mqtt_started' not in st.session_state:
-    st.session_state.mqtt_started = True
-    mqtt_thread = threading.Thread(target=start_mqtt_client, daemon=True)
-    mqtt_thread.start()
-
-# Your existing functions
 def predict_irrigation(temperature, soil_moisture, humidity, light_intensity):
     """Simple rule-based irrigation prediction"""
     if soil_moisture < 45:
@@ -100,23 +56,21 @@ def predict_irrigation(temperature, soil_moisture, humidity, light_intensity):
         'soil_moisture_level': soil_moisture
     }
 
-def store_sensor_data(data):
-    """Store sensor data in Supabase"""
+def get_latest_esp32_data():
+    """Get the latest data from ESP32 device"""
     try:
         if supabase_client:
-            response = supabase_client.table("sensor_data").insert({
-                "crop_type": data['crop_type'],
-                "temperature": data['temperature'],
-                "soil_moisture": data['soil_moisture'],
-                "humidity": data['humidity'],
-                "light_intensity": data['light_intensity'],
-                "device_id": data.get('device_id', 'simulated'),
-                "timestamp": datetime.utcnow().isoformat()
-            }).execute()
-            return True
+            response = supabase_client.table("sensor_data")\
+                .select("*")\
+                .eq("device_id", "ESP32_TOMOGROW_001")\
+                .order("timestamp", desc=True)\
+                .limit(1)\
+                .execute()
+            if response.data:
+                return response.data[0]
     except Exception as e:
-        return False
-    return False
+        pass
+    return None
 
 def get_historical_data(limit=50):
     """Get historical data from Supabase"""
@@ -135,54 +89,91 @@ def get_historical_data(limit=50):
         return []
 
 # Dashboard UI
-st.title("Smart Irrigation Monitoring Dashboard")
+st.title("🌱 Smart Irrigation Monitoring Dashboard")
 st.markdown("---")
 
-# MQTT Live Data Section
-st.header("📡 MQTT Live Data from ESP32")
+# Auto-refresh every 10 seconds
+st.runtime.legacy_caching.clear_cache()
 
-if latest_sensor_data:
-    col1, col2, col3, col4, col5 = st.columns(5)
+# Live Data Section
+st.header("📡 Live ESP32 Data")
+
+latest_data = get_latest_esp32_data()
+
+if latest_data:
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("🌡️ Temperature", f"{latest_sensor_data.get('temperature', 0):.1f}°C")
+        st.metric("🌡️ Temperature", f"{latest_data.get('temperature', 0):.1f}°C")
     
     with col2:
-        st.metric("💧 Humidity", f"{latest_sensor_data.get('humidity', 0):.1f}%")
+        st.metric("💧 Humidity", f"{latest_data.get('humidity', 0):.1f}%")
     
     with col3:
-        st.metric("🌱 Soil Moisture", f"{latest_sensor_data.get('soil_moisture', 0):.1f}%")
+        soil_moisture = latest_data.get('soil_moisture', 0)
+        st.metric("🌱 Soil Moisture", f"{soil_moisture:.1f}%")
     
     with col4:
-        st.metric("💡 Light", f"{latest_sensor_data.get('light_intensity', 0)}")
+        st.metric("💡 Light", f"{latest_data.get('light_intensity', 0)}")
     
-    with col5:
-        st.metric("🌫️ Air Quality", f"{latest_sensor_data.get('air_quality', 0):.1f}")
-    
-    # Make prediction with MQTT data
+    # Make prediction
     prediction = predict_irrigation(
-        latest_sensor_data.get('temperature', 0),
-        latest_sensor_data.get('soil_moisture', 0),
-        latest_sensor_data.get('humidity', 0),
-        latest_sensor_data.get('light_intensity', 0)
+        latest_data.get('temperature', 0),
+        soil_moisture,
+        latest_data.get('humidity', 0),
+        latest_data.get('light_intensity', 0)
     )
     
-    st.success(f"🤖 **Live Prediction:** {prediction['irrigation_decision'].upper()} (Confidence: {prediction['confidence_level']:.1%})")
+    st.success(f"🤖 **AI Prediction:** {prediction['irrigation_decision'].upper()} (Confidence: {prediction['confidence_level']:.1%})")
     
-    # Store the MQTT data in Supabase
-    if store_sensor_data({
-        'crop_type': latest_sensor_data.get('crop_type', 'tomato'),
-        'temperature': latest_sensor_data.get('temperature', 0),
-        'soil_moisture': latest_sensor_data.get('soil_moisture', 0),
-        'humidity': latest_sensor_data.get('humidity', 0),
-        'light_intensity': latest_sensor_data.get('light_intensity', 0),
-        'device_id': latest_sensor_data.get('device_id', 'esp32_mqtt')
-    }):
-        st.info("✅ MQTT data stored in database")
+    # Show when data was last updated
+    if 'timestamp' in latest_data:
+        timestamp = pd.to_datetime(latest_data['timestamp'])
+        st.caption(f"Last updated: {timestamp.strftime('%Y-%m-%d %H:%M:%S')} (Auto-refreshes every 10 seconds)")
     
 else:
-    st.info("📡 Waiting for MQTT data from ESP32...")
-    st.info("Make sure your ESP32 is running and connected to WiFi")
+    st.info("📡 Waiting for ESP32 data...")
+    st.info("Make sure your ESP32 is running and sending data to Supabase")
 
-# Rest of your existing dashboard code continues here...
-# [Include all your existing sidebar, charts, etc.]
+# Rest of your dashboard...
+st.markdown("---")
+st.header("📊 Historical Data")
+
+historical_data = get_historical_data()
+if historical_data:
+    df = pd.DataFrame(historical_data)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    
+    tab1, tab2 = st.tabs(["Soil Moisture", "All Sensors"])
+    
+    with tab1:
+        fig = px.line(df, x='timestamp', y='soil_moisture', 
+                     title='Soil Moisture Over Time',
+                     labels={'soil_moisture': 'Soil Moisture (%)', 'timestamp': 'Time'})
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab2:
+        st.dataframe(df[['timestamp', 'temperature', 'humidity', 'soil_moisture', 'light_intensity', 'device_id']].head(10))
+else:
+    st.info("No historical data yet. ESP32 data will appear here automatically.")
+
+# Manual input section
+st.markdown("---")
+st.header("🧪 Manual Sensor Input")
+
+with st.form("manual_form"):
+    col1, col2 = st.columns(2)
+    with col1:
+        temp = st.slider("Temperature (°C)", 0.0, 50.0, 25.0)
+        moisture = st.slider("Soil Moisture (%)", 0.0, 100.0, 60.0)
+    with col2:
+        humidity = st.slider("Humidity (%)", 0.0, 100.0, 65.0)
+        light = st.slider("Light Intensity", 0, 1000, 500)
+    
+    if st.form_submit_button("Test Prediction"):
+        prediction = predict_irrigation(temp, moisture, humidity, light)
+        st.info(f"Prediction: {prediction['irrigation_decision'].upper()} (Confidence: {prediction['confidence_level']:.1%})")
+
+# Auto-refresh
+time.sleep(10)
+st.runtime.legacy_caching.clear_cache()
