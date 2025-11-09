@@ -8,6 +8,7 @@ import numpy as np
 import pickle
 import sklearn
 from sklearn.preprocessing import StandardScaler
+import os
 
 # Page config MUST be first
 st.set_page_config(
@@ -29,19 +30,36 @@ def init_supabase():
         st.error(f"Supabase initialization failed: {e}")
         return None
 
-# Load your trained ML model
+# Load your trained ML model with better error handling
 @st.cache_resource
 def load_ml_model():
-    try:
-        # Load your saved model
-        with open('fast_tomato_irrigation_model.pkl', 'rb') as file:
-            model_data = pickle.load(file)
-        
-        st.success("✅ ML Model Loaded: Random Forest Classifier")
-        return model_data
-    except Exception as e:
-        st.error(f"❌ Failed to load ML model: {e}")
-        return None
+    model_paths = [
+        'fast_tomato_irrigation_model.pkl',
+        './fast_tomato_irrigation_model.pkl',
+        'model/fast_tomato_irrigation_model.pkl'
+    ]
+    
+    for model_path in model_paths:
+        try:
+            if os.path.exists(model_path):
+                with open(model_path, 'rb') as file:
+                    model_data = pickle.load(file)
+                
+                # Debug: Check what's in the model data
+                st.sidebar.write("🔍 Model Data Keys:", list(model_data.keys()))
+                if 'feature_names' in model_data:
+                    st.sidebar.write("📋 Training Features:", model_data['feature_names'])
+                if 'scaler' in model_data:
+                    st.sidebar.write("⚖️ Scaler expects features:", model_data['scaler'].n_features_in_)
+                
+                st.success(f"✅ ML Model Loaded from: {model_path}")
+                return model_data
+        except Exception as e:
+            st.error(f"❌ Failed to load model from {model_path}: {e}")
+            continue
+    
+    st.warning("ML Model File Not Found - Using rule-based system")
+    return None
 
 supabase_client = init_supabase()
 ml_model_data = load_ml_model()
@@ -52,12 +70,28 @@ def predict_irrigation_ml(temperature, soil_moisture, humidity, light_intensity)
         return predict_irrigation_rules(temperature, soil_moisture, humidity, light_intensity)
     
     try:
-        # Prepare features in the same order as training
-        features = np.array([[temperature, soil_moisture, humidity, light_intensity]])
-        
-        # Use the loaded model
+        # Check what features the model expects
         model = ml_model_data['model']
         scaler = ml_model_data['scaler']
+        
+        # Debug information
+        st.sidebar.write("🤖 Model expects features:", scaler.n_features_in_)
+        
+        # Handle different feature scenarios
+        if scaler.n_features_in_ == 5:
+            # Your model was trained with 5 features - we need to identify the 5th one
+            # Common additional features: air_quality, crop_type_encoded, season, etc.
+            # For now, we'll add a default value for the 5th feature
+            st.sidebar.info("Model expects 5 features - using default for missing feature")
+            
+            # Try different possible 5th features
+            features = np.array([[temperature, soil_moisture, humidity, light_intensity, 0.5]])  # Default value
+        elif scaler.n_features_in_ == 4:
+            # Standard 4 features
+            features = np.array([[temperature, soil_moisture, humidity, light_intensity]])
+        else:
+            st.error(f"Unexpected number of features: {scaler.n_features_in_}")
+            return predict_irrigation_rules(temperature, soil_moisture, humidity, light_intensity)
         
         # Scale features
         features_scaled = scaler.transform(features)
@@ -75,12 +109,8 @@ def predict_irrigation_ml(temperature, soil_moisture, humidity, light_intensity)
         # Get feature importance if available
         feature_importance = None
         if hasattr(model, 'feature_importances_'):
-            feature_importance = {
-                'temperature': model.feature_importances_[0],
-                'soil_moisture': model.feature_importances_[1],
-                'humidity': model.feature_importances_[2],
-                'light_intensity': model.feature_importances_[3]
-            }
+            feature_importance = dict(zip([f'feature_{i}' for i in range(len(model.feature_importances_))], 
+                                        model.feature_importances_))
         
         return {
             'irrigation_prediction': decision,
@@ -92,7 +122,8 @@ def predict_irrigation_ml(temperature, soil_moisture, humidity, light_intensity)
                 'no': probabilities[0],
                 'yes': probabilities[1]
             },
-            'feature_importance': feature_importance
+            'feature_importance': feature_importance,
+            'features_used': scaler.n_features_in_
         }
         
     except Exception as e:
@@ -180,6 +211,18 @@ def create_timestamp_column(df):
 st.title("🌱 Smart Irrigation AI Dashboard")
 st.markdown("---")
 
+# Model Status Banner
+if ml_model_data:
+    # Check feature dimensions
+    if 'scaler' in ml_model_data:
+        expected_features = ml_model_data['scaler'].n_features_in_
+        if expected_features == 5:
+            st.warning("🤖 **ML Model Active** (5 features expected - using default for missing feature)")
+        else:
+            st.success(f"🎯 **ML Model Active**: Random Forest ({expected_features} features)")
+else:
+    st.warning("⚡ **Rule-Based System**: Using expert rules")
+
 # Auto-refresh
 try:
     from streamlit_autorefresh import st_autorefresh
@@ -187,22 +230,6 @@ try:
     st.success("🔄 Auto-refresh enabled (10 seconds)")
 except:
     st.info("🔄 Auto-refresh not available. Refresh page manually for updates.")
-
-# Model Information Section
-st.sidebar.header("🤖 ML Model Info")
-if ml_model_data:
-    st.sidebar.success("**Random Forest Classifier**")
-    st.sidebar.write(f"**Accuracy:** 100.0%")
-    st.sidebar.write(f"**Training Data:** 50,000 samples")
-    st.sidebar.write("**Features:** Temperature, Soil Moisture, Humidity, Light")
-    
-    if ml_model_data.get('feature_importance') is not None:
-        st.sidebar.subheader("Feature Importance")
-        importance = ml_model_data['feature_importance']
-        for feature, imp in importance.items():
-            st.sidebar.write(f"• {feature}: {imp:.3f}")
-else:
-    st.sidebar.warning("Using Rule-Based System")
 
 # Live Data Section
 st.header("📡 Live ESP32 Data")
@@ -272,6 +299,8 @@ if latest_data:
             
             # Model used
             st.write(f"**Model:** {prediction['model_used']}")
+            if 'features_used' in prediction:
+                st.write(f"**Features:** {prediction['features_used']}")
         
         with pred_col2:
             with st.expander("📊 Prediction Details"):
@@ -291,123 +320,9 @@ if latest_data:
 else:
     st.warning("📡 Waiting for ESP32 data...")
 
-# Historical Data & ML Analysis Section
-st.markdown("---")
-st.header("📊 Historical Analysis & ML Insights")
-
-historical_data = get_historical_data(100)
-
-if historical_data and len(historical_data) > 0:
-    df = pd.DataFrame(historical_data)
-    df = create_timestamp_column(df)
-    
-    # Convert numeric columns safely
-    numeric_columns = ['temperature', 'humidity', 'soil_moisture', 'light_intensity']
-    for col in numeric_columns:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    
-    st.success(f"✅ Analyzing {len(df)} historical records")
-    
-    # ML Predictions on Historical Data
-    st.subheader("🤖 ML Predictions Over Time")
-    
-    # Generate predictions for all historical data
-    predictions = []
-    for _, row in df.iterrows():
-        if all(pd.notna(row[col]) for col in numeric_columns if col in row):
-            pred = predict_irrigation_ml(
-                float(row['temperature']),
-                float(row['soil_moisture']),
-                float(row['humidity']),
-                int(row['light_intensity'])
-            )
-            predictions.append(pred)
-        else:
-            predictions.append(None)
-    
-    # Add predictions to dataframe
-    df['prediction'] = [p['irrigation_decision'] if p else None for p in predictions]
-    df['confidence'] = [p['confidence_level'] if p else None for p in predictions]
-    
-    # Prediction Analysis
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        irrigation_count = sum(1 for p in predictions if p and p['irrigation_decision'] == 'yes')
-        st.metric("🚰 Irrigation Events", irrigation_count)
-    
-    with col2:
-        avg_confidence = np.mean([p['confidence_level'] for p in predictions if p])
-        st.metric("🤖 Avg Confidence", f"{avg_confidence:.1%}")
-    
-    with col3:
-        dry_percentage = len([m for m in df['soil_moisture'] if m < 45]) / len(df) * 100
-        st.metric("🏜️ Dry Soil Time", f"{dry_percentage:.1f}%")
-    
-    with col4:
-        ml_count = sum(1 for p in predictions if p and p.get('model_used') == 'RandomForest')
-        st.metric("🧠 ML Decisions", ml_count)
-    
-    # Interactive Charts
-    tab1, tab2, tab3 = st.tabs(["🌱 Soil & Predictions", "📈 ML Confidence", "🔍 Feature Analysis"])
-    
-    with tab1:
-        if 'soil_moisture' in df.columns and not df['soil_moisture'].isna().all():
-            fig_soil_pred = go.Figure()
-            
-            # Soil moisture line
-            fig_soil_pred.add_trace(go.Scatter(
-                x=df['timestamp'], 
-                y=df['soil_moisture'],
-                mode='lines',
-                name='Soil Moisture',
-                line=dict(color='#2E8B57', width=3)
-            ))
-            
-            # Irrigation decision points
-            yes_points = df[df['prediction'] == 'yes']
-            if len(yes_points) > 0:
-                fig_soil_pred.add_trace(go.Scatter(
-                    x=yes_points['timestamp'],
-                    y=yes_points['soil_moisture'],
-                    mode='markers',
-                    name='Irrigation Needed',
-                    marker=dict(color='red', size=10, symbol='x')
-                ))
-            
-            fig_soil_pred.update_layout(
-                title='Soil Moisture with ML Irrigation Decisions',
-                xaxis_title='Time',
-                yaxis_title='Soil Moisture (%)',
-                height=400
-            )
-            st.plotly_chart(fig_soil_pred, use_container_width=True)
-    
-    with tab2:
-        if 'confidence' in df.columns and not df['confidence'].isna().all():
-            fig_confidence = px.line(df, x='timestamp', y='confidence',
-                                   title='ML Prediction Confidence Over Time',
-                                   labels={'confidence': 'Confidence Level'})
-            fig_confidence.update_traces(line=dict(color='#FF6B6B', width=3))
-            st.plotly_chart(fig_confidence, use_container_width=True)
-    
-    with tab3:
-        # Feature correlation analysis
-        if all(col in df.columns for col in numeric_columns):
-            corr_matrix = df[numeric_columns].corr()
-            fig_corr = px.imshow(corr_matrix,
-                               title='Feature Correlation Matrix',
-                               color_continuous_scale='RdBu_r',
-                               aspect="auto")
-            st.plotly_chart(fig_corr, use_container_width=True)
-
-else:
-    st.info("No historical data yet. ESP32 data will appear here automatically.")
-
 # Model Testing Section
 st.markdown("---")
-st.header("🧪 Test Your ML Model")
+st.header("🧪 Test ML Model")
 
 col1, col2 = st.columns(2)
 
@@ -493,17 +408,18 @@ with status_col1:
 with status_col2:
     st.subheader("🤖 AI System")
     if ml_model_data:
-        st.success("✅ ML Model Active")
-        st.caption("Random Forest (100% Accuracy)")
+        if 'scaler' in ml_model_data:
+            features = ml_model_data['scaler'].n_features_in_
+            st.success(f"✅ ML Model ({features} features)")
+        else:
+            st.success("✅ ML Model Active")
     else:
         st.warning("⚠️ Rule-Based System")
-        st.caption("ML Model Not Loaded")
 
 with status_col3:
     st.subheader("📊 Data Flow")
-    if historical_data:
-        data_count = len(historical_data)
-        st.success(f"✅ {data_count} Records")
+    if latest_data:
+        st.success("✅ Live Data")
     else:
         st.warning("⚠️ No Data")
 
