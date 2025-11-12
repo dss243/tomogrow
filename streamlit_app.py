@@ -9,6 +9,8 @@ import pickle
 import sklearn
 from sklearn.preprocessing import StandardScaler
 import os
+import requests
+import time
 
 # Page config MUST be first
 st.set_page_config(
@@ -56,6 +58,81 @@ def load_ml_model():
 
 supabase_client = init_supabase()
 ml_model_data = load_ml_model()
+
+def get_thingspeak_data():
+    """Fetch latest data from ThingSpeak as fallback"""
+    try:
+        # Your ThingSpeak channel
+        url = "https://api.thingspeak.com/channels/3125494/feeds/last.json"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if 'field1' in data and data['field1'] is not None:
+                return {
+                    'temperature': float(data.get('field1', 0)),
+                    'humidity': float(data.get('field2', 0)),
+                    'soil_moisture': float(data.get('field3', 0)),
+                    'light_intensity': int(float(data.get('field4', 0))),
+                    'air_quality': float(data.get('field5', 0)),
+                    'created_at': data.get('created_at', datetime.now().isoformat()),
+                    'device_id': 'ESP32_THINGSPEAK_001'
+                }
+    except Exception as e:
+        st.sidebar.error(f"ThingSpeak error: {e}")
+    return None
+
+def get_latest_esp32_data():
+    """Get the latest data from ESP32 device - tries Supabase first, then ThingSpeak"""
+    # Try Supabase first
+    supabase_data = None
+    try:
+        if supabase_client:
+            response = supabase_client.table("sensor_data")\
+                .select("*")\
+                .eq("device_id", "ESP32_TOMOGROW_001")\
+                .order("created_at", desc=True)\
+                .limit(1)\
+                .execute()
+            
+            if response.data and len(response.data) > 0:
+                supabase_data = response.data[0]
+                st.sidebar.success("📡 Connected to Supabase")
+                return supabase_data
+    except Exception as e:
+        st.sidebar.error(f"Supabase error: {e}")
+    
+    # If Supabase fails, try ThingSpeak
+    thingspeak_data = get_thingspeak_data()
+    if thingspeak_data:
+        st.sidebar.info("📡 Using ThingSpeak data")
+        return thingspeak_data
+    
+    # If both fail, use demo data
+    st.sidebar.warning("🔧 Using demo data - no live connection")
+    return {
+        'temperature': 25.0 + np.random.uniform(-2, 2),
+        'humidity': 60.0 + np.random.uniform(-10, 10),
+        'soil_moisture': 55.0 + np.random.uniform(-10, 10),
+        'light_intensity': 500 + np.random.randint(-100, 100),
+        'air_quality': 75.0 + np.random.uniform(-10, 10),
+        'created_at': datetime.now().isoformat(),
+        'device_id': 'DEMO_DEVICE'
+    }
+
+def get_historical_data(limit=100):
+    """Get historical data from Supabase"""
+    try:
+        if supabase_client:
+            response = supabase_client.table("sensor_data")\
+                .select("*")\
+                .eq("device_id", "ESP32_TOMOGROW_001")\
+                .order("created_at", desc=True)\
+                .limit(limit)\
+                .execute()
+            return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Error fetching historical data: {e}")
+    return None
 
 def predict_irrigation_ml(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
     """Use your trained Random Forest model for prediction"""
@@ -163,38 +240,6 @@ def predict_irrigation_rules(temperature, soil_moisture, humidity, light_intensi
         'model_used': 'RuleBased'
     }
 
-def get_latest_esp32_data():
-    """Get the latest data from ESP32 device"""
-    try:
-        if supabase_client:
-            response = supabase_client.table("sensor_data")\
-                .select("*")\
-                .eq("device_id", "ESP32_TOMOGROW_001")\
-                .order("id", desc=True)\
-                .limit(1)\
-                .execute()
-            
-            if response.data and len(response.data) > 0:
-                return response.data[0]
-    except Exception as e:
-        st.error(f"Error fetching latest data: {e}")
-    return None
-
-def get_historical_data(limit=100):
-    """Get historical data from Supabase"""
-    try:
-        if supabase_client:
-            response = supabase_client.table("sensor_data")\
-                .select("*")\
-                .eq("device_id", "ESP32_TOMOGROW_001")\
-                .order("id", desc=True)\
-                .limit(limit)\
-                .execute()
-            return response.data if response.data else []
-    except Exception as e:
-        st.error(f"Error fetching historical data: {e}")
-    return None
-
 def create_timestamp_column(df):
     """Create proper timestamp for charts"""
     if 'created_at' in df.columns:
@@ -242,9 +287,9 @@ else:
 try:
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=10000, key="data_refresh")
-    st.success("🔄 Auto-refresh enabled (10 seconds)")
+    st.sidebar.success("🔄 Auto-refresh enabled (10 seconds)")
 except:
-    st.info("🔄 Auto-refresh not available. Refresh page manually for updates.")
+    st.sidebar.info("🔄 Auto-refresh not available")
 
 # Live Data Section
 st.header("📡 Live ESP32 Data")
@@ -288,7 +333,13 @@ if latest_data:
             st.metric("💡 Light", "N/A")
     
     with col5:
-        st.metric("🌿 Crop Type", crop_type.title())
+        air_quality = latest_data.get('air_quality', 0)
+        if air_quality is not None:
+            air_quality_float = float(air_quality)
+            air_status = "🟢 Good" if air_quality_float > 70 else "🟡 Fair" if air_quality_float > 50 else "🔴 Poor"
+            st.metric("🌫️ Air Quality", f"{air_quality_float:.1f}", air_status)
+        else:
+            st.metric("🌫️ Air Quality", "N/A")
 
     # AI Prediction with ML Model
     if all(key in latest_data and latest_data[key] is not None for key in ['temperature', 'soil_moisture', 'humidity', 'light_intensity']):
@@ -342,6 +393,62 @@ if latest_data:
 
 else:
     st.warning("📡 Waiting for ESP32 data...")
+
+# Historical Data Charts
+st.markdown("---")
+st.header("📊 Historical Data")
+
+historical_data = get_historical_data(50)  # Get last 50 records
+if historical_data and len(historical_data) > 0:
+    df = pd.DataFrame(historical_data)
+    df = create_timestamp_column(df)
+    
+    # Create charts
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Temperature and Humidity
+        fig_temp_hum = go.Figure()
+        fig_temp_hum.add_trace(go.Scatter(x=df['timestamp'], y=df['temperature'], 
+                                         name='Temperature', line=dict(color='red')))
+        fig_temp_hum.add_trace(go.Scatter(x=df['timestamp'], y=df['humidity'], 
+                                         name='Humidity', line=dict(color='blue'), yaxis='y2'))
+        
+        fig_temp_hum.update_layout(
+            title='Temperature & Humidity',
+            xaxis_title='Time',
+            yaxis=dict(title='Temperature (°C)', side='left'),
+            yaxis2=dict(title='Humidity (%)', side='right', overlaying='y'),
+            height=300
+        )
+        st.plotly_chart(fig_temp_hum, use_container_width=True)
+    
+    with col2:
+        # Soil Moisture
+        fig_moisture = px.line(df, x='timestamp', y='soil_moisture', 
+                              title='Soil Moisture Over Time')
+        fig_moisture.add_hrect(y0=45, y1=85, line_width=0, fillcolor="green", opacity=0.1,
+                              annotation_text="Optimal Range", annotation_position="top left")
+        fig_moisture.update_layout(height=300)
+        st.plotly_chart(fig_moisture, use_container_width=True)
+    
+    # Light and Air Quality
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        fig_light = px.line(df, x='timestamp', y='light_intensity', 
+                           title='Light Intensity Over Time')
+        fig_light.update_layout(height=300)
+        st.plotly_chart(fig_light, use_container_width=True)
+    
+    with col4:
+        fig_air = px.line(df, x='timestamp', y='air_quality', 
+                         title='Air Quality Over Time')
+        fig_air.update_layout(height=300)
+        st.plotly_chart(fig_air, use_container_width=True)
+
+else:
+    st.info("No historical data available yet. Data will appear here once collected.")
 
 # Model Testing Section
 st.markdown("---")
@@ -428,7 +535,7 @@ with status_col1:
     else:
         st.error("❌ Supabase Offline")
     
-    if latest_data:
+    if latest_data and latest_data.get('device_id') != 'DEMO_DEVICE':
         st.success("✅ ESP32 Online")
     else:
         st.warning("⚠️ ESP32 Offline")
@@ -444,13 +551,29 @@ with status_col2:
 with status_col3:
     st.subheader("📊 Data Flow")
     if latest_data:
-        st.success("✅ Live Data")
+        if latest_data.get('device_id') == 'ESP32_THINGSPEAK_001':
+            st.info("✅ ThingSpeak Data")
+        elif latest_data.get('device_id') == 'DEMO_DEVICE':
+            st.warning("⚠️ Demo Data")
+        else:
+            st.success("✅ Live Data")
     else:
         st.warning("⚠️ No Data")
 
 with status_col4:
     st.subheader("🌱 Current Crop")
     st.success(f"✅ {crop_type.title()}")
+
+# Data Source Information
+st.sidebar.markdown("---")
+st.sidebar.header("📡 Data Sources")
+st.sidebar.write("**Primary:** Supabase")
+st.sidebar.write("**Fallback:** ThingSpeak")
+st.sidebar.write("**Demo:** Random Data")
+
+# Manual Refresh
+if st.sidebar.button("🔄 Manual Refresh"):
+    st.rerun()
 
 # Footer
 st.markdown("---")
