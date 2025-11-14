@@ -33,10 +33,10 @@ def init_supabase():
 supabase_client = init_supabase()
 
 # =====================================================
-# Load ML model (model only, ignore scaler)
+# Load full model artifacts (model, scaler, encoders)
 # =====================================================
 @st.cache_resource
-def load_ml_model():
+def load_model_artifacts():
     model_path = "fast_tomato_irrigation_model.pkl"
     if not os.path.exists(model_path):
         st.error("ML model file fast_tomato_irrigation_model.pkl not found in app directory.")
@@ -44,47 +44,97 @@ def load_ml_model():
 
     try:
         with open(model_path, "rb") as f:
-            model_data = pickle.load(f)
+            artifacts = pickle.load(f)
     except Exception as e:
         st.error(f"Error loading ML model: {e}")
         return None
 
-    # If you saved a dict {"model": clf, "scaler": scaler}, take only the model
-    if isinstance(model_data, dict):
-        model = model_data.get("model", None)
-    else:
-        model = model_data
-
-    if model is None:
-        st.error("ML model object not found inside the pickle file.")
+    required_keys = ["model", "scaler", "crop_encoder", "pump_encoder", "feature_names"]
+    if not all(k in artifacts for k in required_keys):
+        st.error(f"Model pickle is missing some required keys: {required_keys}")
         return None
 
-    return model
+    return artifacts
 
-ml_model = load_ml_model()
+artifacts = load_model_artifacts()
 
 # =====================================================
-# ML prediction (no scaler, no rules)
+# Prediction function – same logic as training script
 # =====================================================
-def predict_irrigation_ml(temp, soil, hum, light):
-    if ml_model is None:
-        st.error("ML model is not loaded; cannot make predictions.")
-        return {"decision": "no", "confidence": 0.0}
+def predict_irrigation(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
+    """
+    Reimplements predict_irrigation_regularized using loaded artifacts.
+    """
+    if artifacts is None:
+        st.error("Model artifacts not loaded; cannot predict.")
+        return None
 
-    # Adjust features to match your training (here: [temp, soil, hum, light])
-    X = np.array([[temp, soil, hum, light]])
+    model = artifacts["model"]
+    scaler = artifacts["scaler"]
+    crop_encoder = artifacts["crop_encoder"]
+    pump_encoder = artifacts["pump_encoder"]
+
+    # Build input_data dict like in your training code
+    input_data = {
+        "Crop_Type": crop_type,
+        "Temperature": float(temperature),
+        "Soil_Moisture": float(soil_moisture),
+        "Humidity": float(humidity),
+        "Light_Intensity": float(light_intensity),
+    }
+
+    # Build features array with 5 features
+    features = np.array([[
+        input_data["Temperature"],
+        input_data["Soil_Moisture"],
+        input_data["Humidity"],
+        input_data["Light_Intensity"],
+        crop_encoder.transform([input_data["Crop_Type"]])[0]
+    ]])
 
     try:
-        pred = ml_model.predict(X)[0]
-        if hasattr(ml_model, "predict_proba"):
-            conf = float(np.max(ml_model.predict_proba(X)))
-        else:
-            conf = 0.8
-        decision = "yes" if int(pred) == 1 else "no"
-        return {"decision": decision, "confidence": round(conf, 2)}
+        features_scaled = scaler.transform(features)
     except Exception as e:
-        st.error(f"ML prediction error: {e}")
-        return {"decision": "no", "confidence": 0.0}
+        st.error(f"Error scaling features: {e}")
+        return None
+
+    try:
+        prediction_encoded = model.predict(features_scaled)[0]
+        probabilities = model.predict_proba(features_scaled)[0]
+    except Exception as e:
+        st.error(f"Model prediction error: {e}")
+        return None
+
+    prediction = pump_encoder.inverse_transform([prediction_encoded])[0]
+    confidence = float(probabilities[prediction_encoded])
+
+    # Decision logic (same as your code)
+    soil_moisture = input_data["Soil_Moisture"]
+    temperature = input_data["Temperature"]
+
+    irrigation_decision = prediction
+    if soil_moisture < 45:
+        irrigation_decision = "yes"
+    elif soil_moisture > 85:
+        irrigation_decision = "no"
+    elif soil_moisture < 55 and temperature > 30:
+        irrigation_decision = "yes"
+    elif soil_moisture > 75 and temperature < 20:
+        irrigation_decision = "no"
+
+    final_confidence = min(confidence, 0.95)
+
+    return {
+        "irrigation_prediction": prediction,
+        "irrigation_decision": irrigation_decision,
+        "confidence_level": round(final_confidence, 4),
+        "soil_moisture_level": soil_moisture,
+        "model_used": type(model).__name__,
+        "probabilities": {
+            "no": round(probabilities[0], 4),
+            "yes": round(probabilities[1], 4),
+        },
+    }
 
 # =====================================================
 # Fetch data from Supabase
@@ -109,7 +159,6 @@ def get_latest_data():
 
 
 def get_history(limit: int = 50):
-    """Fetch last N records for history view."""
     try:
         if supabase_client:
             response = (
@@ -125,7 +174,6 @@ def get_history(limit: int = 50):
             if not data:
                 return None
             df = pd.DataFrame(data)
-            # Ensure created_at is datetime and sort oldest -> newest
             if "created_at" in df.columns:
                 df["created_at"] = pd.to_datetime(df["created_at"])
                 df = df.sort_values("created_at")
@@ -135,16 +183,42 @@ def get_history(limit: int = 50):
     return None
 
 # =====================================================
-# UI Layout – tabs
+# UI styles
 # =====================================================
-st.title("🍅 TomoGrow – Smart Irrigation Dashboard")
+st.markdown(
+    """
+    <style>
+    .big-title {
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin-bottom: 0;
+    }
+    .subtitle {
+        font-size: 0.95rem;
+        color: #888;
+        margin-top: 0.2rem;
+        margin-bottom: 1.2rem;
+    }
+    .metric-box {
+        padding: 0.8rem 0.6rem 0.2rem 0.6rem;
+        border-radius: 0.6rem;
+        background-color: #f7f9fb;
+        border: 1px solid #e3e7ed;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown('<div class="big-title">🍅 TomoGrow – Smart Irrigation Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">ESP32 ➜ ThingSpeak ➜ Supabase ➜ ML model ➜ Irrigation decision</div>', unsafe_allow_html=True)
 
 tabs = st.tabs(["🌟 Live", "📈 History", "ℹ️ About"])
 
-# ---------------------- LIVE TAB ----------------------
+# =====================================================
+# LIVE TAB
+# =====================================================
 with tabs[0]:
-    st.subheader("Real‑Time Status")
-
     latest_data = get_latest_data()
 
     if latest_data:
@@ -154,39 +228,71 @@ with tabs[0]:
         light_intensity = float(latest_data.get("light_intensity", 0))
         timestamp = latest_data.get("created_at", "")
 
+        # Crop fixed to "tomato" since this is TomoGrow
+        crop_type = "tomato"
+
         top_col1, top_col2 = st.columns([2, 1])
 
         with top_col1:
             st.markdown("#### 📡 Live ESP32 Measurements")
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("🌡️ Temperature", f"{temperature:.1f} °C")
-            col2.metric("💧 Humidity", f"{humidity:.1f} %")
-            col3.metric("🌱 Soil Moisture", f"{soil_moisture:.1f} %")
-            col4.metric("💡 Light", f"{int(light_intensity)}")
+            c1, c2, c3, c4 = st.columns(4)
+
+            with c1:
+                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+                st.metric("🌡️ Temperature", f"{temperature:.1f} °C")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with c2:
+                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+                st.metric("💧 Humidity", f"{humidity:.1f} %")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with c3:
+                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+                st.metric("🌱 Soil Moisture", f"{soil_moisture:.1f} %")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with c4:
+                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+                st.metric("💡 Light", f"{int(light_intensity)}")
+                st.markdown("</div>", unsafe_allow_html=True)
+
             st.caption(f"Last update: {timestamp}")
 
         with top_col2:
             st.markdown("#### 🎯 ML Irrigation Decision")
-            prediction = predict_irrigation_ml(
+
+            result = predict_irrigation(
                 temperature,
                 soil_moisture,
                 humidity,
-                light_intensity
+                light_intensity,
+                crop_type=crop_type,
             )
 
-            if prediction["decision"] == "yes":
-                st.error("🚨 Irrigation needed")
+            if result is None:
+                st.warning("Prediction is not available.")
             else:
-                st.success("✅ No irrigation needed")
+                decision = result["irrigation_decision"]
+                conf = result["confidence_level"]
 
-            st.write(f"Model confidence: **{prediction['confidence']:.1%}**")
+                if decision == "yes":
+                    st.error("🚨 Irrigation needed")
+                else:
+                    st.success("✅ No irrigation needed")
+
+                st.write(f"Model prediction: `{result['irrigation_prediction']}`")
+                st.write(f"Confidence: **{conf:.1%}**")
+                st.caption(f"Model used: {result['model_used']}")
 
     else:
         st.warning("Waiting for data in Supabase (sensor_data table)...")
 
-# ---------------------- HISTORY TAB ----------------------
+# =====================================================
+# HISTORY TAB
+# =====================================================
 with tabs[1]:
-    st.subheader("Sensor History")
+    st.subheader("📈 Sensor History")
 
     col_hist1, col_hist2 = st.columns([3, 1])
     with col_hist2:
@@ -205,7 +311,7 @@ with tabs[1]:
 
         st.line_chart(
             df_hist.set_index("created_at")[metric_choice],
-            height=300
+            height=320
         )
 
         st.markdown("#### Recent data table")
@@ -215,9 +321,11 @@ with tabs[1]:
             hide_index=True
         )
 
-# ---------------------- ABOUT TAB ----------------------
+# =====================================================
+# ABOUT TAB
+# =====================================================
 with tabs[2]:
-    st.subheader("About TomoGrow")
+    st.subheader("ℹ️ About TomoGrow")
     st.markdown(
         """
         **TomoGrow** is a smart irrigation demo that connects:
@@ -225,8 +333,8 @@ with tabs[2]:
         - An ESP32 with sensors (temperature, humidity, soil moisture, light)  
         - ThingSpeak as a simple IoT buffer  
         - Supabase as a cloud database  
-        - A machine‑learning model (`fast_tomato_irrigation_model.pkl`) to decide when to irrigate  
+        - A RandomForest/Logistic Regression ML pipeline saved as `fast_tomato_irrigation_model.pkl`  
 
-        This dashboard shows the latest sensor readings, the model's decision, and a short history of recent measurements.
+        The web app uses the same scaler, encoders, and decision logic as in the training notebook to keep predictions consistent.
         """
     )
