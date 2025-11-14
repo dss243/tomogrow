@@ -116,7 +116,6 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
         },
     }
 
-# Wrapper for live data
 def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity):
     return model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato")
 
@@ -167,27 +166,26 @@ def get_history(limit: int = 100):
     return None
 
 # =====================================================
-# Styling – very light green, clean cards
+# Styling – ultra light, mostly white
 # =====================================================
 st.markdown(
     """
     <style>
-    /* page background: almost white with a light green tint */
+    /* Make the whole page bright */
     body {
-        background-color: #fdfefb;
+        background-color: #ffffff;
     }
-    /* main app container: pure very light green */
     .main .block-container {
         padding-top: 1.2rem;
         padding-bottom: 1.2rem;
-        background-color: #f3fff5;
+        background-color: #ffffff;
     }
-    /* header box: soft pastel green */
+    /* Header box with a soft hint of green */
     .title-box {
         padding: 0.8rem 1.0rem;
         border-radius: 0.9rem;
-        background: #effff4;
-        border: 1px solid #d5f5de;
+        background: #f7fff9;
+        border: 1px solid #e0f5e6;
         margin-bottom: 1.0rem;
     }
     .title-main {
@@ -201,11 +199,12 @@ st.markdown(
         color: #4f7a4c;
         margin-top: 0.25rem;
     }
+    /* Cards: white with very light borders */
     .card {
         padding: 0.9rem 1.0rem;
         border-radius: 0.8rem;
         background-color: #ffffff;
-        border: 1px solid #e3f1e6;
+        border: 1px solid #ecf3ed;
         margin-bottom: 0.9rem;
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
     }
@@ -215,11 +214,12 @@ st.markdown(
         color: #2b4b2f;
         margin-bottom: 0.4rem;
     }
+    /* Metric boxes: very subtle green background */
     .metric-box {
         padding: 0.5rem 0.5rem;
         border-radius: 0.6rem;
-        background-color: #f8fff9;
-        border: 1px solid #e4f3e7;
+        background-color: #f9fff9;
+        border: 1px solid #e5f2e7;
     }
     .plant-state {
         font-size: 1.2rem;
