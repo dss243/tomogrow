@@ -1,5 +1,8 @@
 import streamlit as st
 from supabase import create_client
+import pickle
+import numpy as np
+import os
 
 # =====================================================
 # Config
@@ -25,6 +28,25 @@ def init_supabase():
 supabase_client = init_supabase()
 
 # =====================================================
+# Load ML model
+# =====================================================
+@st.cache_resource
+def load_ml_model():
+    model_path = "fast_tomato_irrigation_model.pkl"
+    if os.path.exists(model_path):
+        try:
+            with open(model_path, "rb") as f:
+                return pickle.load(f)
+        except Exception as e:
+            st.error(f"Error loading ML model: {e}")
+            return None
+    else:
+        st.warning("ML model file fast_tomato_irrigation_model.pkl not found, using rule-based logic.")
+        return None
+
+ml_model_data = load_ml_model()
+
+# =====================================================
 # Rule-based irrigation logic
 # =====================================================
 def predict_irrigation_rules(temp, soil, hum, light):
@@ -40,6 +62,41 @@ def predict_irrigation_rules(temp, soil, hum, light):
         return {"decision": "no", "confidence": 0.85}
     else:
         return {"decision": "no", "confidence": 0.75}
+
+# =====================================================
+# ML prediction using the model
+# =====================================================
+def predict_irrigation_ml(temp, soil, hum, light, crop="tomato"):
+    # If model is not loaded, fallback to rules
+    if ml_model_data is None:
+        return predict_irrigation_rules(temp, soil, hum, light)
+
+    # Expecting model_data to be {"model": clf, "scaler": scaler} or similar
+    # Adjust according to how you saved the pickle.
+    model = ml_model_data.get("model", None) if isinstance(ml_model_data, dict) else ml_model_data
+    scaler = ml_model_data.get("scaler", None) if isinstance(ml_model_data, dict) else None
+
+    # Encode crop type if your model uses it (example)
+    crop_mapping = {"tomato": 0, "cucumber": 1, "pepper": 2, "lettuce": 3}
+    crop_code = crop_mapping.get(crop, 0)
+
+    # Features: adjust order/contents to match training
+    X = np.array([[temp, soil, hum, light, crop_code]])
+
+    if scaler is not None:
+        X = scaler.transform(X)
+
+    try:
+        pred = model.predict(X)[0]
+        if hasattr(model, "predict_proba"):
+            conf = float(np.max(model.predict_proba(X)))
+        else:
+            conf = 0.8
+        decision = "yes" if pred == 1 else "no"
+        return {"decision": decision, "confidence": round(conf, 2)}
+    except Exception as e:
+        st.error(f"ML prediction error: {e}")
+        return predict_irrigation_rules(temp, soil, hum, light)
 
 # =====================================================
 # Fetch latest sensor data from Supabase
@@ -67,6 +124,12 @@ def get_latest_data():
 # =====================================================
 st.title("🌱 Smart Irrigation Dashboard")
 
+# Crop selection for model (if it uses crop feature)
+crop_type = st.sidebar.selectbox(
+    "Select Crop",
+    ["tomato", "cucumber", "pepper", "lettuce"]
+)
+
 latest_data = get_latest_data()
 
 if latest_data:
@@ -82,12 +145,13 @@ if latest_data:
     col3.metric("🌱 Soil Moisture", f"{soil_moisture:.1f} %")
     col4.metric("💡 Light Intensity", f"{int(light_intensity)}")
 
-    st.subheader("🎯 Irrigation Decision (Rule-based)")
-    prediction = predict_irrigation_rules(
+    st.subheader("🎯 Irrigation Decision (ML + Rules)")
+    prediction = predict_irrigation_ml(
         temperature,
         soil_moisture,
         humidity,
-        light_intensity
+        light_intensity,
+        crop_type
     )
 
     if prediction["decision"] == "yes":
