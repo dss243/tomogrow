@@ -16,7 +16,6 @@ st.set_page_config(
 
 SUPABASE_URL = "https://ragapkdlgtpmumwlzphs.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZ2Fwa2RsZ3RwbXVtd2x6cGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTYwMDMsImV4cCI6MjA3ODE5MjAwM30.OQj-NFgd6KaDKL1BobPgLOKTCYDFmqw8KnqQFzkFWKo"
-
 DEVICE_ID = "ESP32_TOMOGROW_001"
 
 # =====================================================
@@ -34,7 +33,7 @@ def init_supabase():
 supabase_client = init_supabase()
 
 # =====================================================
-# Load ML model
+# Load ML model (model only, ignore scaler)
 # =====================================================
 @st.cache_resource
 def load_ml_model():
@@ -50,41 +49,35 @@ def load_ml_model():
         st.error(f"Error loading ML model: {e}")
         return None
 
+    # If you saved a dict {"model": clf, "scaler": scaler}, take only the model
     if isinstance(model_data, dict):
         model = model_data.get("model", None)
-        scaler = model_data.get("scaler", None)
     else:
         model = model_data
-        scaler = None
 
     if model is None:
         st.error("ML model object not found inside the pickle file.")
         return None
 
-    return {"model": model, "scaler": scaler}
+    return model
 
-ml_model_data = load_ml_model()
+ml_model = load_ml_model()
 
 # =====================================================
-# ML prediction (no rules)
+# ML prediction (no scaler, no rules)
 # =====================================================
 def predict_irrigation_ml(temp, soil, hum, light):
-    if ml_model_data is None:
+    if ml_model is None:
         st.error("ML model is not loaded; cannot make predictions.")
         return {"decision": "no", "confidence": 0.0}
 
-    model = ml_model_data["model"]
-    scaler = ml_model_data["scaler"]
-
+    # Adjust features to match your training (here: [temp, soil, hum, light])
     X = np.array([[temp, soil, hum, light]])
 
-    if scaler is not None:
-        X = scaler.transform(X)
-
     try:
-        pred = model.predict(X)[0]
-        if hasattr(model, "predict_proba"):
-            conf = float(np.max(model.predict_proba(X)))
+        pred = ml_model.predict(X)[0]
+        if hasattr(ml_model, "predict_proba"):
+            conf = float(np.max(ml_model.predict_proba(X)))
         else:
             conf = 0.8
         decision = "yes" if int(pred) == 1 else "no"
@@ -204,7 +197,6 @@ with tabs[1]:
     if df_hist is None:
         st.info("No history yet. Keep the ESP32 and bridge running to collect data.")
     else:
-        # Choose what to plot
         metric_choice = st.selectbox(
             "Select metric to visualize",
             ["temperature", "humidity", "soil_moisture", "light_intensity"],
