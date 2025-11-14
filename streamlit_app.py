@@ -166,11 +166,12 @@ def get_history(limit: int = 100):
     return None
 
 # =====================================================
-# Styling – ultra light, white background
+# Styling – ultra light, mostly white
 # =====================================================
 st.markdown(
     """
     <style>
+    /* Make the whole page bright */
     body {
         background-color: #ffffff;
     }
@@ -179,6 +180,7 @@ st.markdown(
         padding-bottom: 1.2rem;
         background-color: #ffffff;
     }
+    /* Header box with a soft hint of green */
     .title-box {
         padding: 0.8rem 1.0rem;
         border-radius: 0.9rem;
@@ -197,6 +199,7 @@ st.markdown(
         color: #4f7a4c;
         margin-top: 0.25rem;
     }
+    /* Cards: white with very light borders */
     .card {
         padding: 0.9rem 1.0rem;
         border-radius: 0.8rem;
@@ -211,6 +214,7 @@ st.markdown(
         color: #2b4b2f;
         margin-bottom: 0.4rem;
     }
+    /* Metric boxes: very subtle green background */
     .metric-box {
         padding: 0.5rem 0.5rem;
         border-radius: 0.6rem;
