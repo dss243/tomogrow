@@ -58,9 +58,9 @@ def load_model_artifacts():
 artifacts = load_model_artifacts()
 
 # =====================================================
-# Prediction – pure model decision
+# Prediction – pure model decision (reusable)
 # =====================================================
-def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
+def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
     if artifacts is None:
         return None
 
@@ -116,6 +116,10 @@ def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_in
         },
     }
 
+# Wrapper for live data
+def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity):
+    return model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato")
+
 # =====================================================
 # Fetch data from Supabase
 # =====================================================
@@ -163,7 +167,7 @@ def get_history(limit: int = 100):
     return None
 
 # =====================================================
-# Styling – very light green, simple cards
+# Styling – light green, simple cards + emoji plant
 # =====================================================
 st.markdown(
     """
@@ -213,19 +217,18 @@ st.markdown(
         border: 1px solid #e1ece1;
     }
     .plant-state {
-        font-size: 1.1rem;
-        font-weight: 600;
+        font-size: 1.2rem;
+        font-weight: 650;
         text-align: center;
-        margin-bottom: 0.3rem;
+        margin-bottom: 0.2rem;
     }
-    .plant-ascii {
-        font-family: monospace;
-        white-space: pre;
+    .plant-emoji {
+        font-size: 2.5rem;
         text-align: center;
         line-height: 1.1;
     }
     .plant-note {
-        font-size: 0.85rem;
+        font-size: 0.9rem;
         color: #5f7a5f;
         text-align: center;
         margin-top: 0.3rem;
@@ -253,19 +256,20 @@ st.markdown(
 )
 
 # =====================================================
-# Layout: left = live + advice + plant, right = history
+# Layout: top = live + advice + plant, bottom = history + simulation
 # =====================================================
-col_left, col_right = st.columns([1.4, 1.6])
-
 latest_data = get_latest_data()
 
-# ---------------------- LEFT: LIVE + ADVICE + PLANT ----------------------
-with col_left:
+top_left, top_right = st.columns([1.4, 1.6])
+
+# ---------------------- TOP LEFT: LIVE + ADVICE + PLANT ----------------------
+with top_left:
     # Live snapshot
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title">Live field snapshot</div>', unsafe_allow_html=True)
 
     result_for_plant = None
+    temperature = humidity = soil_moisture = light_intensity = None
 
     if latest_data:
         temperature = float(latest_data.get("temperature", 0))
@@ -311,7 +315,6 @@ with col_left:
             soil_moisture,
             humidity,
             light_intensity,
-            crop_type="tomato",
         )
 
         result_for_plant = result
@@ -339,54 +342,36 @@ with col_left:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Plant simulation view
+    # Plant view (emoji)
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title">Plant view</div>', unsafe_allow_html=True)
 
     if latest_data and artifacts is not None and result_for_plant is not None:
         decision = result_for_plant["irrigation_prediction"]
 
-        if soil_moisture > 70 and decision == "no":
+        if soil_moisture is not None and soil_moisture > 70 and decision == "no":
             state_label = "Happy plant"
-            plant_ascii = """
-              \\   /
-               .-.
-             _(   )_
-             /     \\
-              | | |
-            """
+            plant_emoji = "🌿"
             note = "Leaves look firm. Soil feels moist. The plant is in a good mood."
-        elif soil_moisture < 40 or decision == "yes":
+        elif soil_moisture is not None and (soil_moisture < 40 or decision == "yes"):
             state_label = "Thirsty plant"
-            plant_ascii = """
-               .-.
-              (   )
-               | |
-              /   \\
-             /_____\\
-            """
+            plant_emoji = "🥀"
             note = "The plant is starting to droop. The soil is drying and water would help."
         else:
             state_label = "Tired plant"
-            plant_ascii = """
-               .-.
-              (   )
-               | |
-               | |
-              /   \\
-            """
+            plant_emoji = "🌱"
             note = "The plant is not in danger, but it is not at its best. Conditions are average."
 
         st.markdown(f'<div class="plant-state">{state_label}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="plant-ascii">{plant_ascii}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="plant-emoji">{plant_emoji}</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="plant-note">{note}</div>', unsafe_allow_html=True)
     else:
         st.write("When live data arrives, this box will show how the plant might feel.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------------- RIGHT: HISTORY ----------------------
-with col_right:
+# ---------------------- TOP RIGHT: HISTORY ----------------------
+with top_right:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title">Sensor history</div>', unsafe_allow_html=True)
 
@@ -427,3 +412,65 @@ with col_right:
         )
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------------------- BOTTOM: SIMULATION SECTION ----------------------
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.markdown('<div class="card-title">Simulation: test different conditions</div>', unsafe_allow_html=True)
+
+col_sim1, col_sim2 = st.columns([1.2, 1.2])
+
+with col_sim1:
+    st.write("Move the sliders to imagine a different moment in the field and see the advice change.")
+
+    sim_temp = st.slider("Simulated temperature (°C)", min_value=0.0, max_value=50.0, value=25.0, step=0.5)
+    sim_soil = st.slider("Simulated soil moisture (%)", min_value=0.0, max_value=100.0, value=50.0, step=1.0)
+    sim_hum = st.slider("Simulated air humidity (%)", min_value=0.0, max_value=100.0, value=60.0, step=1.0)
+    sim_light = st.slider("Simulated light level", min_value=0, max_value=1500, value=500, step=10)
+
+    if artifacts is None:
+        st.write("The model is not loaded, simulation is not available.")
+    else:
+        sim_result = model_predict(sim_temp, sim_soil, sim_hum, sim_light, crop_type="tomato")
+
+        if sim_result is None:
+            st.write("Could not compute a simulation with these values.")
+        else:
+            sim_decision = sim_result["irrigation_prediction"]
+            sim_conf = sim_result["confidence_level"]
+
+            if sim_decision == "yes":
+                st.write("Simulated advice: water the plants in this situation.")
+            else:
+                st.write("Simulated advice: no water needed in this situation.")
+
+            st.write(f"Confidence in this simulated advice: about {sim_conf:.0%}")
+
+with col_sim2:
+    st.write("Simulated plant view")
+
+    if artifacts is not None:
+        if sim_result is not None:
+            sim_decision = sim_result["irrigation_prediction"]
+            # reuse same thresholds as live plant
+            if sim_soil > 70 and sim_decision == "no":
+                sim_state_label = "Happy plant"
+                sim_emoji = "🌿"
+                sim_note = "In this scenario, the soil is moist and the plant feels comfortable."
+            elif sim_soil < 40 or sim_decision == "yes":
+                sim_state_label = "Thirsty plant"
+                sim_emoji = "🥀"
+                sim_note = "In this scenario, the plant would like water."
+            else:
+                sim_state_label = "Tired plant"
+                sim_emoji = "🌱"
+                sim_note = "In this scenario, conditions are just okay, not ideal."
+
+            st.markdown(f'<div class="plant-state">{sim_state_label}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="plant-emoji">{sim_emoji}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="plant-note">{sim_note}</div>', unsafe_allow_html=True)
+        else:
+            st.write("Move the sliders on the left to see a simulated plant state.")
+    else:
+        st.write("Model not loaded, plant simulation is not available.")
+
+st.markdown("</div>", unsafe_allow_html=True)
