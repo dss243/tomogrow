@@ -167,31 +167,34 @@ def get_history(limit: int = 100):
     return None
 
 # =====================================================
-# Styling – light green theme and cards
+# Styling – very light green, clean cards
 # =====================================================
 st.markdown(
     """
     <style>
+    /* page background: almost white with a light green tint */
     body {
-        background-color: #f0fff4;          /* very light green */
+        background-color: #fdfefb;
     }
+    /* main app container: pure very light green */
     .main .block-container {
         padding-top: 1.2rem;
         padding-bottom: 1.2rem;
-        background-color: #f7fff9;          /* pale green inside */
+        background-color: #f3fff5;
     }
+    /* header box: soft pastel green */
     .title-box {
         padding: 0.8rem 1.0rem;
         border-radius: 0.9rem;
-        background: #e6ffed;
-        border: 1px solid #c6f6d5;
+        background: #effff4;
+        border: 1px solid #d5f5de;
         margin-bottom: 1.0rem;
     }
     .title-main {
         font-size: 2.1rem;
         font-weight: 650;
         margin: 0;
-        color: #234221;
+        color: #205023;
     }
     .title-sub {
         font-size: 0.95rem;
@@ -202,21 +205,21 @@ st.markdown(
         padding: 0.9rem 1.0rem;
         border-radius: 0.8rem;
         background-color: #ffffff;
-        border: 1px solid #e0ebe0;
+        border: 1px solid #e3f1e6;
         margin-bottom: 0.9rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
     }
     .card-title {
         font-size: 1.05rem;
         font-weight: 600;
-        color: #254024;
+        color: #2b4b2f;
         margin-bottom: 0.4rem;
     }
     .metric-box {
         padding: 0.5rem 0.5rem;
         border-radius: 0.6rem;
-        background-color: #f7fbf7;
-        border: 1px solid #e1ece1;
+        background-color: #f8fff9;
+        border: 1px solid #e4f3e7;
     }
     .plant-state {
         font-size: 1.2rem;
