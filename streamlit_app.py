@@ -15,8 +15,8 @@ st.set_page_config(
 @st.cache_resource
 def init_supabase():
     try:
-        url = st.secrets["https://ragapkdlgtpmumwlzphs.supabase.co"]
-        key = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZ2Fwa2RsZ3RwbXVtd2x6cGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTYwMDMsImV4cCI6MjA3ODE5MjAwM30.OQj-NFgd6KaDKL1BobPgLOKTCYDFmqw8KnqQFzkFWKo"]
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_ANON_KEY"]
         client = create_client(url, key)
         return client
     except Exception as e:
@@ -30,7 +30,7 @@ supabase_client = init_supabase()
 def load_ml_model():
     model_path = "fast_tomato_irrigation_model.pkl"
     if os.path.exists(model_path):
-        with open(model_path, 'rb') as f:
+        with open(model_path, "rb") as f:
             return pickle.load(f)
     else:
         st.warning("ML model not found, using rule-based system")
@@ -99,7 +99,7 @@ crop_type = st.sidebar.selectbox(
 latest_data = get_latest_data()
 
 if latest_data:
-    # Debug raw row (you can comment this out later)
+    # Optional debug:
     # st.subheader("Raw Supabase Row")
     # st.json(latest_data)
 
