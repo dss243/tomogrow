@@ -163,28 +163,28 @@ def get_history(limit: int = 100):
     return None
 
 # =====================================================
-# Styling – plant themed, farmer friendly
+# Styling – very light green, simple cards
 # =====================================================
 st.markdown(
     """
     <style>
     body {
-        background-color: #f4f7f2;
+        background-color: #f5faf5;
     }
     .main .block-container {
-        padding-top: 1.5rem;
-        padding-bottom: 1.5rem;
+        padding-top: 1.2rem;
+        padding-bottom: 1.2rem;
     }
     .title-box {
-        padding: 1.0rem 1.2rem;
+        padding: 0.8rem 1.0rem;
         border-radius: 0.8rem;
-        background: linear-gradient(90deg, #e4f3e3, #f5fbf4);
-        border: 1px solid #cfe6cf;
-        margin-bottom: 1.2rem;
+        background: #f0f8f0;
+        border: 1px solid #d6ead6;
+        margin-bottom: 1.0rem;
     }
     .title-main {
-        font-size: 2.1rem;
-        font-weight: 700;
+        font-size: 2.0rem;
+        font-weight: 650;
         margin: 0;
         color: #234221;
     }
@@ -193,24 +193,42 @@ st.markdown(
         color: #4f7a4c;
         margin-top: 0.25rem;
     }
-    .metric-box {
-        padding: 0.8rem 0.7rem 0.3rem 0.7rem;
-        border-radius: 0.7rem;
-        background-color: #f7faf7;
-        border: 1px solid #dfe8df;
-    }
-    .section-box {
+    .card {
         padding: 0.9rem 1.0rem;
         border-radius: 0.8rem;
         background-color: #ffffff;
-        border: 1px solid #e1e5e1;
-        margin-bottom: 1.0rem;
+        border: 1px solid #e0ebe0;
+        margin-bottom: 0.9rem;
     }
-    .section-title {
+    .card-title {
         font-size: 1.05rem;
         font-weight: 600;
         color: #254024;
         margin-bottom: 0.4rem;
+    }
+    .metric-box {
+        padding: 0.5rem 0.5rem;
+        border-radius: 0.6rem;
+        background-color: #f7fbf7;
+        border: 1px solid #e1ece1;
+    }
+    .plant-state {
+        font-size: 1.1rem;
+        font-weight: 600;
+        text-align: center;
+        margin-bottom: 0.3rem;
+    }
+    .plant-ascii {
+        font-family: monospace;
+        white-space: pre;
+        text-align: center;
+        line-height: 1.1;
+    }
+    .plant-note {
+        font-size: 0.85rem;
+        color: #5f7a5f;
+        text-align: center;
+        margin-top: 0.3rem;
     }
     .small-muted {
         font-size: 0.8rem;
@@ -227,7 +245,7 @@ st.markdown(
     <div class="title-box">
         <div class="title-main">TomoGrow – Smart Irrigation Monitor</div>
         <div class="title-sub">
-            A simple view of how thirsty your plants are today.
+            A light overview of soil moisture, weather and when to water.
         </div>
     </div>
     """,
@@ -237,15 +255,17 @@ st.markdown(
 # =====================================================
 # Layout: left = live + advice + plant, right = history
 # =====================================================
-col_left, col_right = st.columns([1.5, 1.5])
+col_left, col_right = st.columns([1.4, 1.6])
 
 latest_data = get_latest_data()
 
 # ---------------------- LEFT: LIVE + ADVICE + PLANT ----------------------
 with col_left:
     # Live snapshot
-    st.markdown('<div class="section-box">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Live sensor snapshot</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">Live field snapshot</div>', unsafe_allow_html=True)
+
+    result_for_plant = None
 
     if latest_data:
         temperature = float(latest_data.get("temperature", 0))
@@ -273,7 +293,7 @@ with col_left:
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown(
-            f'<p class="small-muted">Last sensor update from the field: {timestamp}</p>',
+            f'<p class="small-muted">Last update from the field: {timestamp}</p>',
             unsafe_allow_html=True,
         )
     else:
@@ -282,10 +302,8 @@ with col_left:
     st.markdown("</div>", unsafe_allow_html=True)
 
     # Irrigation advice
-    st.markdown('<div class="section-box">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Irrigation advice</div>', unsafe_allow_html=True)
-
-    result_for_plant = None
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">Irrigation advice</div>', unsafe_allow_html=True)
 
     if latest_data and artifacts is not None:
         result = predict_irrigation_model_only(
@@ -301,19 +319,19 @@ with col_left:
         if result is None:
             st.write("The system is not ready to give advice yet.")
         else:
-            decision = result["irrigation_prediction"]   # yes / no from model
+            decision = result["irrigation_prediction"]
             conf = result["confidence_level"]
 
             if decision == "yes":
-                st.success("Water the plants now.")
+                st.write("Advice: water the plants now.")
                 st.write("Soil and weather conditions suggest that watering would help the plants.")
             else:
-                st.info("No water needed at the moment.")
+                st.write("Advice: no water needed at the moment.")
                 st.write("Current conditions look comfortable; watering can wait.")
 
             st.write(f"Confidence in this advice: about {conf:.0%}")
             st.markdown(
-                '<p class="small-muted">Advice based on recent soil moisture, air temperature, humidity and light.</p>',
+                '<p class="small-muted">Based on soil moisture, air temperature, humidity and light.</p>',
                 unsafe_allow_html=True,
             )
     else:
@@ -322,14 +340,14 @@ with col_left:
     st.markdown("</div>", unsafe_allow_html=True)
 
     # Plant simulation view
-    st.markdown('<div class="section-box">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Plant simulation</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">Plant view</div>', unsafe_allow_html=True)
 
     if latest_data and artifacts is not None and result_for_plant is not None:
         decision = result_for_plant["irrigation_prediction"]
 
         if soil_moisture > 70 and decision == "no":
-            plant_state = "happy"
+            state_label = "Happy plant"
             plant_ascii = """
               \\   /
                .-.
@@ -337,9 +355,9 @@ with col_left:
              /     \\
               | | |
             """
-            description = "Leaves look firm and green. The soil feels moist and the plant is relaxed."
+            note = "Leaves look firm. Soil feels moist. The plant is in a good mood."
         elif soil_moisture < 40 or decision == "yes":
-            plant_state = "thirsty"
+            state_label = "Thirsty plant"
             plant_ascii = """
                .-.
               (   )
@@ -347,9 +365,9 @@ with col_left:
               /   \\
              /_____\\
             """
-            description = "Leaves begin to droop a little. The soil is getting dry and the plant would like a drink."
+            note = "The plant is starting to droop. The soil is drying and water would help."
         else:
-            plant_state = "tired"
+            state_label = "Tired plant"
             plant_ascii = """
                .-.
               (   )
@@ -357,26 +375,23 @@ with col_left:
                | |
               /   \\
             """
-            description = "The plant is not in danger, but it is not at its happiest. Conditions are just average."
+            note = "The plant is not in danger, but it is not at its best. Conditions are average."
 
-        st.text(plant_ascii)
-        st.write(description)
-        st.markdown(
-            '<p class="small-muted">This drawing is only a simple illustration of how the plant might feel.</p>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<div class="plant-state">{state_label}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="plant-ascii">{plant_ascii}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="plant-note">{note}</div>', unsafe_allow_html=True)
     else:
-        st.write("When live data arrives, the virtual plant will reflect its mood here.")
+        st.write("When live data arrives, this box will show how the plant might feel.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------------- RIGHT: HISTORY ----------------------
 with col_right:
-    st.markdown('<div class="section-box">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Sensor history</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">Sensor history</div>', unsafe_allow_html=True)
 
     points = st.slider(
-        "Number of recent measurements to display",
+        "Number of recent measurements",
         min_value=20,
         max_value=200,
         value=80,
@@ -389,7 +404,7 @@ with col_right:
         st.write("No history yet. Leave the system running and readings will accumulate here.")
     else:
         metric_choice = st.selectbox(
-            "Choose a variable to follow over time",
+            "Choose a variable to follow",
             ["temperature", "humidity", "soil_moisture", "light_intensity"],
             index=2,
         )
@@ -400,7 +415,7 @@ with col_right:
         )
 
         st.markdown(
-            '<p class="small-muted">A gentle curve usually means a relaxed field; sudden peaks may be irrigation or weather events.</p>',
+            '<p class="small-muted">Slow curves often mean a relaxed field, while sudden peaks may be irrigation or weather events.</p>',
             unsafe_allow_html=True,
         )
 
