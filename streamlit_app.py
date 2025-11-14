@@ -10,7 +10,6 @@ import pandas as pd
 # =====================================================
 st.set_page_config(
     page_title="TomoGrow – Smart Irrigation",
-    page_icon="🍅",
     layout="wide"
 )
 
@@ -27,31 +26,31 @@ def init_supabase():
         client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
         return client
     except Exception as e:
-        st.error(f"Supabase init failed: {e}")
+        st.error(f"Supabase connection error: {e}")
         return None
 
 supabase_client = init_supabase()
 
 # =====================================================
-# Load full model artifacts (model, scaler, encoders)
+# Load model artifacts
 # =====================================================
 @st.cache_resource
 def load_model_artifacts():
     model_path = "fast_tomato_irrigation_model.pkl"
     if not os.path.exists(model_path):
-        st.error("ML model file fast_tomato_irrigation_model.pkl not found in app directory.")
+        st.error("Model file fast_tomato_irrigation_model.pkl was not found in the app directory.")
         return None
 
     try:
         with open(model_path, "rb") as f:
             artifacts = pickle.load(f)
     except Exception as e:
-        st.error(f"Error loading ML model: {e}")
+        st.error(f"Error loading model file: {e}")
         return None
 
     required_keys = ["model", "scaler", "crop_encoder", "pump_encoder", "feature_names"]
     if not all(k in artifacts for k in required_keys):
-        st.error(f"Model pickle is missing some required keys: {required_keys}")
+        st.error("Model file does not contain all required keys: model, scaler, crop_encoder, pump_encoder, feature_names.")
         return None
 
     return artifacts
@@ -59,14 +58,10 @@ def load_model_artifacts():
 artifacts = load_model_artifacts()
 
 # =====================================================
-# Prediction function – same logic as training script
+# Prediction – pure model decision
 # =====================================================
-def predict_irrigation(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
-    """
-    Reimplements predict_irrigation_regularized using loaded artifacts.
-    """
+def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
     if artifacts is None:
-        st.error("Model artifacts not loaded; cannot predict.")
         return None
 
     model = artifacts["model"]
@@ -74,7 +69,6 @@ def predict_irrigation(temperature, soil_moisture, humidity, light_intensity, cr
     crop_encoder = artifacts["crop_encoder"]
     pump_encoder = artifacts["pump_encoder"]
 
-    # Build input_data dict like in your training code
     input_data = {
         "Crop_Type": crop_type,
         "Temperature": float(temperature),
@@ -83,13 +77,18 @@ def predict_irrigation(temperature, soil_moisture, humidity, light_intensity, cr
         "Light_Intensity": float(light_intensity),
     }
 
-    # Build features array with 5 features
+    try:
+        crop_code = crop_encoder.transform([input_data["Crop_Type"]])[0]
+    except Exception as e:
+        st.error(f"Error encoding crop type: {e}")
+        return None
+
     features = np.array([[
         input_data["Temperature"],
         input_data["Soil_Moisture"],
         input_data["Humidity"],
         input_data["Light_Intensity"],
-        crop_encoder.transform([input_data["Crop_Type"]])[0]
+        crop_code,
     ]])
 
     try:
@@ -102,34 +101,15 @@ def predict_irrigation(temperature, soil_moisture, humidity, light_intensity, cr
         prediction_encoded = model.predict(features_scaled)[0]
         probabilities = model.predict_proba(features_scaled)[0]
     except Exception as e:
-        st.error(f"Model prediction error: {e}")
+        st.error(f"Error during model prediction: {e}")
         return None
 
-    prediction = pump_encoder.inverse_transform([prediction_encoded])[0]
+    prediction_label = pump_encoder.inverse_transform([prediction_encoded])[0]
     confidence = float(probabilities[prediction_encoded])
 
-    # Decision logic (same as your code)
-    soil_moisture = input_data["Soil_Moisture"]
-    temperature = input_data["Temperature"]
-
-    irrigation_decision = prediction
-    if soil_moisture < 45:
-        irrigation_decision = "yes"
-    elif soil_moisture > 85:
-        irrigation_decision = "no"
-    elif soil_moisture < 55 and temperature > 30:
-        irrigation_decision = "yes"
-    elif soil_moisture > 75 and temperature < 20:
-        irrigation_decision = "no"
-
-    final_confidence = min(confidence, 0.95)
-
     return {
-        "irrigation_prediction": prediction,
-        "irrigation_decision": irrigation_decision,
-        "confidence_level": round(final_confidence, 4),
-        "soil_moisture_level": soil_moisture,
-        "model_used": type(model).__name__,
+        "irrigation_prediction": prediction_label,      # yes / no from model
+        "confidence_level": round(min(confidence, 0.95), 4),
         "probabilities": {
             "no": round(probabilities[0], 4),
             "yes": round(probabilities[1], 4),
@@ -158,7 +138,7 @@ def get_latest_data():
     return None
 
 
-def get_history(limit: int = 50):
+def get_history(limit: int = 100):
     try:
         if supabase_client:
             response = (
@@ -183,43 +163,89 @@ def get_history(limit: int = 50):
     return None
 
 # =====================================================
-# UI styles
+# Styling – plant themed, farmer friendly
 # =====================================================
 st.markdown(
     """
     <style>
-    .big-title {
-        font-size: 2.2rem;
-        font-weight: 700;
-        margin-bottom: 0;
+    body {
+        background-color: #f4f7f2;
     }
-    .subtitle {
-        font-size: 0.95rem;
-        color: #888;
-        margin-top: 0.2rem;
+    .main .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 1.5rem;
+    }
+    .title-box {
+        padding: 1.0rem 1.2rem;
+        border-radius: 0.8rem;
+        background: linear-gradient(90deg, #e4f3e3, #f5fbf4);
+        border: 1px solid #cfe6cf;
         margin-bottom: 1.2rem;
     }
+    .title-main {
+        font-size: 2.1rem;
+        font-weight: 700;
+        margin: 0;
+        color: #234221;
+    }
+    .title-sub {
+        font-size: 0.95rem;
+        color: #4f7a4c;
+        margin-top: 0.25rem;
+    }
     .metric-box {
-        padding: 0.8rem 0.6rem 0.2rem 0.6rem;
-        border-radius: 0.6rem;
-        background-color: #f7f9fb;
-        border: 1px solid #e3e7ed;
+        padding: 0.8rem 0.7rem 0.3rem 0.7rem;
+        border-radius: 0.7rem;
+        background-color: #f7faf7;
+        border: 1px solid #dfe8df;
+    }
+    .section-box {
+        padding: 0.9rem 1.0rem;
+        border-radius: 0.8rem;
+        background-color: #ffffff;
+        border: 1px solid #e1e5e1;
+        margin-bottom: 1.0rem;
+    }
+    .section-title {
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: #254024;
+        margin-bottom: 0.4rem;
+    }
+    .small-muted {
+        font-size: 0.8rem;
+        color: #7b8b7b;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.markdown('<div class="big-title">🍅 TomoGrow – Smart Irrigation Dashboard</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">ESP32 ➜ ThingSpeak ➜ Supabase ➜ ML model ➜ Irrigation decision</div>', unsafe_allow_html=True)
-
-tabs = st.tabs(["🌟 Live", "📈 History", "ℹ️ About"])
+# Header
+st.markdown(
+    """
+    <div class="title-box">
+        <div class="title-main">TomoGrow – Smart Irrigation Monitor</div>
+        <div class="title-sub">
+            A simple view of how thirsty your plants are today.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # =====================================================
-# LIVE TAB
+# Layout: left = live + advice + plant, right = history
 # =====================================================
-with tabs[0]:
-    latest_data = get_latest_data()
+col_left, col_right = st.columns([1.5, 1.5])
+
+latest_data = get_latest_data()
+
+# ---------------------- LEFT: LIVE + ADVICE + PLANT ----------------------
+with col_left:
+    # Live snapshot
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Live sensor snapshot</div>', unsafe_allow_html=True)
 
     if latest_data:
         temperature = float(latest_data.get("temperature", 0))
@@ -228,113 +254,161 @@ with tabs[0]:
         light_intensity = float(latest_data.get("light_intensity", 0))
         timestamp = latest_data.get("created_at", "")
 
-        # Crop fixed to "tomato" since this is TomoGrow
-        crop_type = "tomato"
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+            st.metric("Temperature", f"{temperature:.1f} °C")
+            st.markdown("</div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+            st.metric("Humidity", f"{humidity:.1f} %")
+            st.markdown("</div>", unsafe_allow_html=True)
+        with c3:
+            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+            st.metric("Soil moisture", f"{soil_moisture:.1f} %")
+            st.markdown("</div>", unsafe_allow_html=True)
+        with c4:
+            st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+            st.metric("Light", f"{int(light_intensity)}")
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        top_col1, top_col2 = st.columns([2, 1])
-
-        with top_col1:
-            st.markdown("#### 📡 Live ESP32 Measurements")
-            c1, c2, c3, c4 = st.columns(4)
-
-            with c1:
-                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-                st.metric("🌡️ Temperature", f"{temperature:.1f} °C")
-                st.markdown("</div>", unsafe_allow_html=True)
-
-            with c2:
-                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-                st.metric("💧 Humidity", f"{humidity:.1f} %")
-                st.markdown("</div>", unsafe_allow_html=True)
-
-            with c3:
-                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-                st.metric("🌱 Soil Moisture", f"{soil_moisture:.1f} %")
-                st.markdown("</div>", unsafe_allow_html=True)
-
-            with c4:
-                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-                st.metric("💡 Light", f"{int(light_intensity)}")
-                st.markdown("</div>", unsafe_allow_html=True)
-
-            st.caption(f"Last update: {timestamp}")
-
-        with top_col2:
-            st.markdown("#### 🎯 ML Irrigation Decision")
-
-            result = predict_irrigation(
-                temperature,
-                soil_moisture,
-                humidity,
-                light_intensity,
-                crop_type=crop_type,
-            )
-
-            if result is None:
-                st.warning("Prediction is not available.")
-            else:
-                decision = result["irrigation_decision"]
-                conf = result["confidence_level"]
-
-                if decision == "yes":
-                    st.error("🚨 Irrigation needed")
-                else:
-                    st.success("✅ No irrigation needed")
-
-                st.write(f"Model prediction: `{result['irrigation_prediction']}`")
-                st.write(f"Confidence: **{conf:.1%}**")
-                st.caption(f"Model used: {result['model_used']}")
-
+        st.markdown(
+            f'<p class="small-muted">Last sensor update from the field: {timestamp}</p>',
+            unsafe_allow_html=True,
+        )
     else:
-        st.warning("Waiting for data in Supabase (sensor_data table)...")
+        st.write("No sensor data yet. When the device starts sending, values will appear here.")
 
-# =====================================================
-# HISTORY TAB
-# =====================================================
-with tabs[1]:
-    st.subheader("📈 Sensor History")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    col_hist1, col_hist2 = st.columns([3, 1])
-    with col_hist2:
-        points = st.slider("Number of points", min_value=10, max_value=200, value=50, step=10)
+    # Irrigation advice
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Irrigation advice</div>', unsafe_allow_html=True)
+
+    result_for_plant = None
+
+    if latest_data and artifacts is not None:
+        result = predict_irrigation_model_only(
+            temperature,
+            soil_moisture,
+            humidity,
+            light_intensity,
+            crop_type="tomato",
+        )
+
+        result_for_plant = result
+
+        if result is None:
+            st.write("The system is not ready to give advice yet.")
+        else:
+            decision = result["irrigation_prediction"]   # yes / no from model
+            conf = result["confidence_level"]
+
+            if decision == "yes":
+                st.success("Water the plants now.")
+                st.write("Soil and weather conditions suggest that watering would help the plants.")
+            else:
+                st.info("No water needed at the moment.")
+                st.write("Current conditions look comfortable; watering can wait.")
+
+            st.write(f"Confidence in this advice: about {conf:.0%}")
+            st.markdown(
+                '<p class="small-muted">Advice based on recent soil moisture, air temperature, humidity and light.</p>',
+                unsafe_allow_html=True,
+            )
+    else:
+        st.write("Waiting for live data and the irrigation advisor to start.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Plant simulation view
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Plant simulation</div>', unsafe_allow_html=True)
+
+    if latest_data and artifacts is not None and result_for_plant is not None:
+        decision = result_for_plant["irrigation_prediction"]
+
+        if soil_moisture > 70 and decision == "no":
+            plant_state = "happy"
+            plant_ascii = """
+              \\   /
+               .-.
+             _(   )_
+             /     \\
+              | | |
+            """
+            description = "Leaves look firm and green. The soil feels moist and the plant is relaxed."
+        elif soil_moisture < 40 or decision == "yes":
+            plant_state = "thirsty"
+            plant_ascii = """
+               .-.
+              (   )
+               | |
+              /   \\
+             /_____\\
+            """
+            description = "Leaves begin to droop a little. The soil is getting dry and the plant would like a drink."
+        else:
+            plant_state = "tired"
+            plant_ascii = """
+               .-.
+              (   )
+               | |
+               | |
+              /   \\
+            """
+            description = "The plant is not in danger, but it is not at its happiest. Conditions are just average."
+
+        st.text(plant_ascii)
+        st.write(description)
+        st.markdown(
+            '<p class="small-muted">This drawing is only a simple illustration of how the plant might feel.</p>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.write("When live data arrives, the virtual plant will reflect its mood here.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------------------- RIGHT: HISTORY ----------------------
+with col_right:
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Sensor history</div>', unsafe_allow_html=True)
+
+    points = st.slider(
+        "Number of recent measurements to display",
+        min_value=20,
+        max_value=200,
+        value=80,
+        step=20,
+    )
 
     df_hist = get_history(limit=points)
 
     if df_hist is None:
-        st.info("No history yet. Keep the ESP32 and bridge running to collect data.")
+        st.write("No history yet. Leave the system running and readings will accumulate here.")
     else:
         metric_choice = st.selectbox(
-            "Select metric to visualize",
+            "Choose a variable to follow over time",
             ["temperature", "humidity", "soil_moisture", "light_intensity"],
-            index=0
+            index=2,
         )
 
         st.line_chart(
             df_hist.set_index("created_at")[metric_choice],
-            height=320
+            height=320,
         )
 
-        st.markdown("#### Recent data table")
+        st.markdown(
+            '<p class="small-muted">A gentle curve usually means a relaxed field; sudden peaks may be irrigation or weather events.</p>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("Recent measurements")
         st.dataframe(
             df_hist[["created_at", "temperature", "humidity", "soil_moisture", "light_intensity"]],
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
         )
 
-# =====================================================
-# ABOUT TAB
-# =====================================================
-with tabs[2]:
-    st.subheader("ℹ️ About TomoGrow")
-    st.markdown(
-        """
-        **TomoGrow** is a smart irrigation demo that connects:
-
-        - An ESP32 with sensors (temperature, humidity, soil moisture, light)  
-        - ThingSpeak as a simple IoT buffer  
-        - Supabase as a cloud database  
-        - A RandomForest/Logistic Regression ML pipeline saved as `fast_tomato_irrigation_model.pkl`  
-
-        The web app uses the same scaler, encoders, and decision logic as in the training notebook to keep predictions consistent.
-        """
-    )
+    st.markdown("</div>", unsafe_allow_html=True)
