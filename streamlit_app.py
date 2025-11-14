@@ -1,19 +1,26 @@
 import streamlit as st
 import numpy as np
-import pickle
 from supabase import create_client
-import os
 
-# ---------------- Page Config ----------------
+# =====================================================
+# Page configuration
+# =====================================================
 st.set_page_config(
     page_title="Smart Irrigation Dashboard",
     page_icon="💧",
     layout="wide"
 )
 
-# ---------------- Supabase Client ----------------
+# =====================================================
+# Initialize Supabase client using st.secrets
+# =====================================================
 @st.cache_resource
 def init_supabase():
+    """
+    Create a Supabase client using secrets.
+    Expects SUPABASE_URL and SUPABASE_ANON_KEY in secrets.toml
+    or Streamlit Cloud app secrets.
+    """
     try:
         url = st.secrets["SUPABASE_URL"]
         key = st.secrets["SUPABASE_ANON_KEY"]
@@ -25,21 +32,16 @@ def init_supabase():
 
 supabase_client = init_supabase()
 
-# ---------------- Load ML Model ----------------
-@st.cache_resource
-def load_ml_model():
-    model_path = "fast_tomato_irrigation_model.pkl"
-    if os.path.exists(model_path):
-        with open(model_path, "rb") as f:
-            return pickle.load(f)
-    else:
-        st.warning("ML model not found, using rule-based system")
-        return None
-
-ml_model_data = load_ml_model()
-
-# ---------------- Prediction Functions ----------------
+# =====================================================
+# Simple rule-based irrigation logic
+# =====================================================
 def predict_irrigation_rules(temp, soil, hum, light):
+    """
+    Very simple rule-based decision:
+    - If soil is very dry => irrigate.
+    - If soil is very wet => do not irrigate.
+    - Otherwise, use temperature and light to adjust.
+    """
     if soil < 45:
         return {"decision": "yes", "confidence": 0.95}
     elif soil > 85:
@@ -53,53 +55,40 @@ def predict_irrigation_rules(temp, soil, hum, light):
     else:
         return {"decision": "no", "confidence": 0.75}
 
-def predict_irrigation_ml(temp, soil, hum, light, crop="tomato"):
-    if ml_model_data is None:
-        return predict_irrigation_rules(temp, soil, hum, light)
-
-    model = ml_model_data["model"]
-    scaler = ml_model_data["scaler"]
-
-    crop_mapping = {"tomato": 0, "cucumber": 1, "pepper": 2, "lettuce": 3}
-    crop_encoded = crop_mapping.get(crop, 0)
-
-    features = np.array([[temp, soil, hum, light, crop_encoded]])
-    features_scaled = scaler.transform(features)
-
-    pred = model.predict(features_scaled)[0]
-    conf = max(model.predict_proba(features_scaled)[0])
-    decision = "yes" if pred == 1 else "no"
-
-    return {"decision": decision, "confidence": round(conf, 2)}
-
-# ---------------- Fetch Latest Data ----------------
+# =====================================================
+# Fetch latest sensor data from Supabase
+# =====================================================
 def get_latest_data():
+    """
+    Get the most recent row from sensor_data table
+    for device ESP32_TOMOGROW_001.
+    """
     try:
         if supabase_client:
-            response = supabase_client.table("sensor_data")\
-                .select("*")\
-                .eq("device_id", "ESP32_TOMOGROW_001")\
-                .order("id", desc=True)\
-                .limit(1)\
+            response = (
+                supabase_client
+                .table("sensor_data")
+                .select("*")
+                .eq("device_id", "ESP32_TOMOGROW_001")
+                .order("id", desc=True)
+                .limit(1)
                 .execute()
+            )
             if response.data:
                 return response.data[0]
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        st.error(f"Error fetching data from Supabase: {e}")
     return None
 
-# ---------------- Streamlit UI ----------------
+# =====================================================
+# UI
+# =====================================================
 st.title("🌱 Smart Irrigation Dashboard")
-
-crop_type = st.sidebar.selectbox(
-    "Select Crop",
-    ["tomato", "cucumber", "pepper", "lettuce"]
-)
 
 latest_data = get_latest_data()
 
 if latest_data:
-    # Optional debug:
+    # Optional: show raw row for debugging
     # st.subheader("Raw Supabase Row")
     # st.json(latest_data)
 
@@ -115,13 +104,12 @@ if latest_data:
     col3.metric("🌱 Soil Moisture", f"{soil_moisture:.1f} %")
     col4.metric("💡 Light Intensity", f"{int(light_intensity)}")
 
-    st.subheader("🎯 AI Irrigation Prediction")
-    prediction = predict_irrigation_ml(
+    st.subheader("🎯 Irrigation Decision (Rule-based)")
+    prediction = predict_irrigation_rules(
         temperature,
         soil_moisture,
         humidity,
-        light_intensity,
-        crop_type
+        light_intensity
     )
 
     if prediction["decision"] == "yes":
