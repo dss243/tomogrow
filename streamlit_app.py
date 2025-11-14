@@ -6,7 +6,7 @@ import os
 import pandas as pd
 
 # =====================================================
-# Config - Force Light Theme
+# Config - Force Light Theme with Green Colors
 # =====================================================
 st.set_page_config(
     page_title="TomoGrow – Smart Irrigation",
@@ -14,51 +14,68 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Force light theme
+# Force light theme with green colors
 st.markdown(
     """
     <style>
-    /* Force complete light theme */
+    /* Force complete light theme with green accents */
     .stApp {
-        background-color: white !important;
+        background-color: #f8fdf8 !important;
     }
     
     .main .block-container {
-        background-color: white !important;
+        background-color: #f8fdf8 !important;
         padding-top: 1rem;
         padding-bottom: 1rem;
     }
     
     /* Make all text dark */
     .stMarkdown, .stText, .stWrite, p, div, span, h1, h2, h3, h4, h5, h6 {
-        color: #333333 !important;
+        color: #1a331c !important;
     }
     
-    /* Fix metric colors */
+    /* Fix metric colors with green theme */
     [data-testid="metric-container"] {
         background-color: transparent !important;
     }
     
     [data-testid="metric-container"] label, [data-testid="metric-container"] div {
-        color: #333333 !important;
+        color: #1a331c !important;
     }
     
     /* Fix dataframe colors */
     .dataframe {
         background-color: white !important;
-        color: #333333 !important;
+        color: #1a331c !important;
     }
     
     /* Fix slider and selectbox colors */
     .stSlider, .stSelectbox {
         background-color: white !important;
-        color: #333333 !important;
+        color: #1a331c !important;
     }
     
-    /* Fix card backgrounds */
+    /* Green alerts */
     .stAlert, .stSuccess, .stInfo, .stWarning, .stError {
-        background-color: #f8f9fa !important;
-        color: #333333 !important;
+        background-color: #f0f8f0 !important;
+        color: #1a331c !important;
+        border-left: 4px solid #22c55e;
+    }
+    
+    /* Green progress bars */
+    .stProgress > div > div {
+        background-color: #22c55e;
+    }
+    
+    /* Green buttons */
+    .stButton button {
+        background-color: #22c55e;
+        color: white;
+    }
+    
+    /* Green slider */
+    .stSlider > div > div {
+        background-color: #22c55e;
     }
     </style>
     """,
@@ -219,80 +236,140 @@ def get_history(limit: int = 100):
     return None
 
 # =====================================================
-# Clean Light Styling
+# Beautiful Green Styling
 # =====================================================
 st.markdown(
     """
     <style>
-    /* Clean light theme */
+    /* Green theme */
     .header {
-        padding: 1rem 0;
-        margin-bottom: 1.5rem;
-        border-bottom: 1px solid #e0e0e0;
+        padding: 1.5rem 0;
+        margin-bottom: 2rem;
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
     }
     
     .header-title {
-        font-size: 1.8rem;
-        font-weight: 600;
-        color: #2c5530;
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: white;
         margin: 0;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     .header-subtitle {
-        font-size: 0.9rem;
-        color: #666666;
-        margin-top: 0.25rem;
+        font-size: 1rem;
+        color: rgba(255, 255, 255, 0.9);
+        margin-top: 0.5rem;
+        font-weight: 400;
     }
     
-    /* Card styling */
+    /* Card styling with green accents */
     .card {
-        background: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 1rem;
+        background: white;
+        border: 1px solid #dcfce7;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 2px 8px rgba(34, 197, 94, 0.08);
+        transition: all 0.3s ease;
+    }
+    
+    .card:hover {
+        box-shadow: 0 4px 16px rgba(34, 197, 94, 0.12);
+        transform: translateY(-2px);
     }
     
     .card-title {
-        font-size: 1.1rem;
+        font-size: 1.2rem;
         font-weight: 600;
-        color: #333333;
-        margin-bottom: 0.75rem;
+        color: #166534;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
     
-    /* Metric grid */
+    .card-title::before {
+        content: "🌿";
+        font-size: 1.3em;
+    }
+    
+    /* Metric grid with green theme */
     .metric-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 0.75rem;
+        gap: 1rem;
         margin-bottom: 1rem;
     }
     
     .metric-card {
-        background: #f8f9fa;
-        border: 1px solid #e9ecef;
-        border-radius: 6px;
-        padding: 0.75rem;
+        background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+        border: 2px solid #bbf7d0;
+        border-radius: 10px;
+        padding: 1rem;
         text-align: center;
+        transition: all 0.3s ease;
+    }
+    
+    .metric-card:hover {
+        border-color: #22c55e;
+        transform: scale(1.02);
     }
     
     .metric-value {
-        font-size: 1.2rem;
-        font-weight: 600;
-        color: #2c5530;
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #166534;
+        margin-bottom: 0.25rem;
     }
     
     .metric-label {
-        font-size: 0.8rem;
-        color: #666666;
-        margin-top: 0.25rem;
+        font-size: 0.85rem;
+        color: #4d7c0f;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     
     /* Status text */
     .status-text {
         font-size: 0.85rem;
-        color: #666666;
+        color: #4d7c0f;
         font-style: italic;
+        background: #f0fdf4;
+        padding: 0.5rem;
+        border-radius: 6px;
+        border-left: 3px solid #22c55e;
+    }
+    
+    /* Plant status indicators */
+    .plant-status-healthy {
+        background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+        border: 2px solid #22c55e;
+        color: #166534;
+    }
+    
+    .plant-status-attention {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border: 2px solid #f59e0b;
+        color: #92400e;
+    }
+    
+    .plant-status-stable {
+        background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%);
+        border: 2px solid #3b82f6;
+        color: #1e40af;
+    }
+    
+    /* Section dividers */
+    .section-divider {
+        height: 2px;
+        background: linear-gradient(90deg, transparent 0%, #22c55e 50%, transparent 100%);
+        margin: 2rem 0;
+        opacity: 0.3;
     }
     </style>
     """,
@@ -303,8 +380,8 @@ st.markdown(
 st.markdown(
     """
     <div class="header">
-        <div class="header-title">TomoGrow – Smart Irrigation Monitor</div>
-        <div class="header-subtitle">Real-time monitoring for optimal plant care</div>
+        <div class="header-title">🌱 TomoGrow – Smart Irrigation Monitor</div>
+        <div class="header-subtitle">Cultivating healthier plants through intelligent irrigation</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -321,7 +398,7 @@ col1, col2 = st.columns([1, 1])
 with col1:
     # Live Field Snapshot
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title">Live Field Snapshot</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">📊 Live Field Snapshot</div>', unsafe_allow_html=True)
     
     if latest_data:
         temperature = float(latest_data.get("temperature", 0))
@@ -336,7 +413,7 @@ with col1:
         # Temperature
         st.markdown("""
         <div class="metric-card">
-            <div class="metric-label">Temperature</div>
+            <div class="metric-label">🌡️ Temperature</div>
             <div class="metric-value">{}°C</div>
         </div>
         """.format(temperature), unsafe_allow_html=True)
@@ -344,7 +421,7 @@ with col1:
         # Humidity
         st.markdown("""
         <div class="metric-card">
-            <div class="metric-label">Humidity</div>
+            <div class="metric-label">💧 Humidity</div>
             <div class="metric-value">{}%</div>
         </div>
         """.format(humidity), unsafe_allow_html=True)
@@ -352,7 +429,7 @@ with col1:
         # Soil Moisture
         st.markdown("""
         <div class="metric-card">
-            <div class="metric-label">Soil Moisture</div>
+            <div class="metric-label">🌱 Soil Moisture</div>
             <div class="metric-value">{}%</div>
         </div>
         """.format(soil_moisture), unsafe_allow_html=True)
@@ -360,7 +437,7 @@ with col1:
         # Light
         st.markdown("""
         <div class="metric-card">
-            <div class="metric-label">Light</div>
+            <div class="metric-label">☀️ Light</div>
             <div class="metric-value">{}</div>
         </div>
         """.format(int(light_intensity)), unsafe_allow_html=True)
@@ -369,17 +446,17 @@ with col1:
         
         # Timestamp
         st.markdown(
-            f'<div class="status-text">Last update from the field: {timestamp}</div>',
+            f'<div class="status-text">🕐 Last update from the field: {timestamp}</div>',
             unsafe_allow_html=True
         )
     else:
-        st.info("No sensor data available. Data will appear when the device starts sending.")
+        st.info("📡 No sensor data available. Data will appear when the device starts sending.")
     
     st.markdown("</div>", unsafe_allow_html=True)
     
     # Irrigation Advice
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title">Irrigation Advice</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">💧 Irrigation Advice</div>', unsafe_allow_html=True)
     
     if latest_data and artifacts is not None:
         result = predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity)
@@ -389,17 +466,19 @@ with col1:
             conf = result["confidence_level"]
             
             if decision == "yes":
-                st.success("**Water the plants now**")
-                st.write("Current conditions suggest watering would benefit the plants.")
+                st.success("**💦 Water the plants now**")
+                st.write("Current conditions suggest watering would benefit the plants for optimal growth.")
+                st.progress(conf)
             else:
-                st.info("**No water needed**")
-                st.write("Conditions are comfortable for the plants.")
+                st.info("**✅ No water needed**")
+                st.write("Conditions are comfortable for the plants. Continue monitoring.")
+                st.progress(conf)
             
-            st.write(f"Confidence: {conf:.0%}")
+            st.write(f"**Confidence Level:** {conf:.0%}")
         else:
-            st.write("Unable to generate irrigation advice.")
+            st.warning("⚠️ Unable to generate irrigation advice at this time.")
     else:
-        st.write("Waiting for data and model to generate advice.")
+        st.info("⏳ Waiting for data and model to generate irrigation advice.")
     
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -407,7 +486,7 @@ with col1:
 with col2:
     # Sensor History & Trends
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title">Sensor History & Trends</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">📈 Sensor History & Trends</div>', unsafe_allow_html=True)
     
     points = st.slider(
         "Number of data points to display",
@@ -424,12 +503,18 @@ with col2:
             "Select metric to visualize",
             ["temperature", "humidity", "soil_moisture", "light_intensity"],
             index=2,
+            format_func=lambda x: {
+                "temperature": "🌡️ Temperature",
+                "humidity": "💧 Humidity", 
+                "soil_moisture": "🌱 Soil Moisture",
+                "light_intensity": "☀️ Light Intensity"
+            }[x]
         )
         
         # Display chart
         st.line_chart(
             df_hist.set_index("created_at")[metric_choice],
-            height=300
+            height=320
         )
         
         # Recent data table
@@ -440,38 +525,90 @@ with col2:
             hide_index=True,
         )
     else:
-        st.write("No historical data available yet.")
+        st.info("📊 No historical data available yet. Data will accumulate over time.")
     
     st.markdown("</div>", unsafe_allow_html=True)
 
+# Divider
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
 # ---------------------- BOTTOM SECTION ----------------------
-st.markdown('<div class="card">', unsafe_allow_html=True)
-st.markdown('<div class="card-title">Plant Health Status</div>', unsafe_allow_html=True)
+col3, col4 = st.columns([1, 1])
 
-if latest_data and artifacts is not None:
-    result = predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity)
-    
-    if result:
-        decision = result["irrigation_prediction"]
+with col3:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">🌿 Plant Health Status</div>', unsafe_allow_html=True)
+
+    if latest_data and artifacts is not None:
+        result = predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity)
         
-        if soil_moisture > 70 and decision == "no":
-            status = "🌿 Healthy"
-            message = "Plant is in good condition with adequate moisture."
-        elif soil_moisture < 40 or decision == "yes":
-            status = "💧 Needs Attention"
-            message = "Plant may need watering soon."
+        if result:
+            decision = result["irrigation_prediction"]
+            
+            if soil_moisture > 70 and decision == "no":
+                status_class = "plant-status-healthy"
+                status = "🌿 Vibrant & Healthy"
+                message = "Your plants are thriving with optimal moisture levels and showing vigorous growth."
+            elif soil_moisture < 40 or decision == "yes":
+                status_class = "plant-status-attention"
+                status = "💧 Needs Attention"
+                message = "Plants show signs of stress. Consider watering to maintain optimal health."
+            else:
+                status_class = "plant-status-stable"
+                status = "🌱 Stable & Growing"
+                message = "Plants are maintaining steady growth under current environmental conditions."
+            
+            st.markdown(f"""
+            <div class="metric-card {status_class}" style="text-align: center; padding: 1.5rem;">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">{status.split(' ')[0]}</div>
+                <div style="font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; color: inherit;">{status}</div>
+                <div style="font-size: 0.9rem; color: inherit;">{message}</div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            status = "🌱 Stable"
-            message = "Plant is doing well under current conditions."
-        
-        col_status, col_message = st.columns([1, 3])
-        with col_status:
-            st.metric("Status", status)
-        with col_message:
-            st.write(message)
+            st.info("🔍 Analyzing plant health data...")
     else:
-        st.write("Unable to determine plant health status.")
-else:
-    st.write("Waiting for data to assess plant health.")
+        st.info("🌱 Plant health assessment will appear when sensor data is available.")
 
-st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col4:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">⚡ Quick Stats</div>', unsafe_allow_html=True)
+    
+    if latest_data:
+        # Quick environmental assessment
+        temp_status = "Optimal" if 18 <= temperature <= 28 else "Check"
+        moisture_status = "Good" if 40 <= soil_moisture <= 80 else "Monitor"
+        light_status = "Adequate" if light_intensity >= 300 else "Low"
+        
+        st.markdown("""
+        <div style="background: #f0fdf4; padding: 1rem; border-radius: 8px; border-left: 4px solid #22c55e;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span>Temperature:</span>
+                <strong>{}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span>Soil Moisture:</span>
+                <strong>{}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span>Light Levels:</span>
+                <strong>{}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Overall:</span>
+                <strong>Stable</strong>
+            </div>
+        </div>
+        """.format(temp_status, moisture_status, light_status), unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="status-text" style="margin-top: 1rem;">
+            💡 Tip: Maintain soil moisture between 40-80% for optimal tomato growth
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Quick stats will appear when sensor data is available.")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
