@@ -166,68 +166,62 @@ def get_history(limit: int = 100):
     return None
 
 # =====================================================
-# Styling – LIGHT THEME
+# Styling – ultra light, white background
 # =====================================================
 st.markdown(
     """
     <style>
-    /* Light theme colors */
     body {
         background-color: #ffffff;
-        color: #333333;
     }
     .main .block-container {
         padding-top: 1.2rem;
         padding-bottom: 1.2rem;
         background-color: #ffffff;
     }
-    /* Header box - light with subtle accent */
     .title-box {
         padding: 0.8rem 1.0rem;
         border-radius: 0.9rem;
-        background: #f8f9fa;
-        border: 1px solid #e9ecef;
+        background: #f7fff9;
+        border: 1px solid #e0f5e6;
         margin-bottom: 1.0rem;
     }
     .title-main {
         font-size: 2.1rem;
         font-weight: 650;
         margin: 0;
-        color: #2c5530;
+        color: #205023;
     }
     .title-sub {
         font-size: 0.95rem;
-        color: #6c757d;
+        color: #4f7a4c;
         margin-top: 0.25rem;
     }
-    /* Cards: white with light borders */
     .card {
         padding: 0.9rem 1.0rem;
         border-radius: 0.8rem;
         background-color: #ffffff;
-        border: 1px solid #dee2e6;
+        border: 1px solid #ecf3ed;
         margin-bottom: 0.9rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
     }
     .card-title {
         font-size: 1.05rem;
         font-weight: 600;
-        color: #495057;
+        color: #2b4b2f;
         margin-bottom: 0.4rem;
     }
-    /* Metric boxes: very light background */
     .metric-box {
         padding: 0.5rem 0.5rem;
         border-radius: 0.6rem;
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
+        background-color: #f9fff9;
+        border: 1px solid #e5f2e7;
     }
     .plant-state {
         font-size: 1.2rem;
         font-weight: 650;
         text-align: center;
         margin-bottom: 0.2rem;
-        color: #495057;
     }
     .plant-emoji {
         font-size: 2.6rem;
@@ -236,23 +230,13 @@ st.markdown(
     }
     .plant-note {
         font-size: 0.9rem;
-        color: #6c757d;
+        color: #5f7a5f;
         text-align: center;
         margin-top: 0.3rem;
     }
     .small-muted {
         font-size: 0.8rem;
-        color: #6c757d;
-    }
-    
-    /* Streamlit component overrides for light theme */
-    .stSlider, .stSelectbox, .stDataFrame {
-        background-color: #ffffff;
-    }
-    
-    /* Ensure text is visible in light theme */
-    .stMarkdown, .stText, .stWrite {
-        color: #333333;
+        color: #7b8b7b;
     }
     </style>
     """,
