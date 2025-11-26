@@ -43,11 +43,35 @@ st.markdown(
         background-color: white !important;
         color: #1a331c !important;
     }
-    /* Fix slider and selectbox colors */
+    /* Base slider and selectbox container */
     .stSlider, .stSelectbox {
-        background-color: white !important;
+        background-color: transparent !important;
         color: #1a331c !important;
     }
+
+    /* ========== SLIDER TRACK / RECTANGLE FIX ========== */
+    /* Slim green track instead of big green rectangle */
+    div.stSlider > div[data-baseweb="slider"] > div[data-testid="stTickBar"] {
+        background: #22c55e !important;      /* track color */
+        height: 4px !important;              /* thinner bar */
+        border-radius: 999px !important;
+    }
+
+    /* Transparent area around the track (removes fat green bar) */
+    div.stSlider > div[data-baseweb="slider"] {
+        background: transparent !important;
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+    }
+
+    /* Thumb styling (red knob) */
+    div.stSlider [role="slider"] {
+        background-color: #ef4444 !important;
+        border: 2px solid #ffffff !important;
+        box-shadow: 0 0 0 3px rgba(34,197,94,0.35) !important;
+    }
+    /* ================================================ */
+
     /* Green alerts */
     .stAlert, .stSuccess, .stInfo, .stWarning, .stError {
         background-color: #f0f8f0 !important;
@@ -62,10 +86,6 @@ st.markdown(
     .stButton button {
         background-color: #22c55e;
         color: white;
-    }
-    /* Green slider */
-    .stSlider > div > div {
-        background-color: #22c55e;
     }
     </style>
     """,
@@ -167,7 +187,7 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
     confidence = float(probabilities[prediction_encoded])
     
     return {
-        "irrigation_prediction": prediction_label,  # yes / no from model
+        "irrigation_prediction": prediction_label,
         "confidence_level": round(min(confidence, 0.95), 4),
         "probabilities": {
             "no": round(probabilities[0], 4),
@@ -175,7 +195,6 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
         },
     }
 
-# Wrapper for live data
 def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity):
     return model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato")
 
@@ -252,7 +271,6 @@ st.markdown(
         margin-top: 0.5rem;
         font-weight: 400;
     }
-    /* Card styling with green accents */
     .card {
         background: white;
         border: 1px solid #dcfce7;
@@ -279,7 +297,6 @@ st.markdown(
         content: "🌿";
         font-size: 1.3em;
     }
-    /* Metric grid with green theme */
     .metric-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -311,7 +328,6 @@ st.markdown(
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
-    /* Status text */
     .status-text {
         font-size: 0.85rem;
         color: #4d7c0f;
@@ -321,7 +337,6 @@ st.markdown(
         border-radius: 6px;
         border-left: 3px solid #22c55e;
     }
-    /* Plant status indicators */
     .plant-status-healthy {
         background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
         border: 2px solid #22c55e;
@@ -337,14 +352,12 @@ st.markdown(
         border: 2px solid #3b82f6;
         color: #1e40af;
     }
-    /* Section dividers */
     .section-divider {
         height: 2px;
         background: linear-gradient(90deg, transparent 0%, #22c55e 50%, transparent 100%);
         margin: 2rem 0;
         opacity: 0.3;
     }
-    /* Control section styling */
     .control-section {
         background: #f8fdf8;
         padding: 1rem;
@@ -352,7 +365,6 @@ st.markdown(
         border: 1px solid #dcfce7;
         margin-bottom: 1.5rem;
     }
-    /* Simulation section styling */
     .simulation-controls {
         background: linear-gradient(135deg, #f0fdf4 0%, #e6f7ed 100%);
         padding: 1.5rem;
@@ -360,7 +372,6 @@ st.markdown(
         border: 2px solid #bbf7d0;
         margin-bottom: 1rem;
     }
-    /* Current values display */
     .current-values {
         background: #f0fdf4;
         padding: 1rem;
@@ -390,9 +401,8 @@ st.markdown(
 latest_data = get_latest_data()
 col1, col2 = st.columns([1, 1])
 
-# ---------------------- LEFT COLUMN ----------------------
+# LEFT COLUMN
 with col1:
-    # Live Field Snapshot
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title">📊 Live Field Snapshot</div>', unsafe_allow_html=True)
     
@@ -403,44 +413,32 @@ with col1:
         light_intensity = float(latest_data.get("light_intensity", 0))
         timestamp = latest_data.get("created_at", "")
         
-        # Metric grid
         st.markdown('<div class="metric-grid">', unsafe_allow_html=True)
-        
-        # Temperature
-        st.markdown("""
+        st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-label">🌡️ Temperature</div>
-                <div class="metric-value">{}°C</div>
+                <div class="metric-value">{temperature}°C</div>
             </div>
-        """.format(temperature), unsafe_allow_html=True)
-        
-        # Humidity
-        st.markdown("""
+        """, unsafe_allow_html=True)
+        st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-label">💧 Humidity</div>
-                <div class="metric-value">{}%</div>
+                <div class="metric-value">{humidity}%</div>
             </div>
-        """.format(humidity), unsafe_allow_html=True)
-        
-        # Soil Moisture
-        st.markdown("""
+        """, unsafe_allow_html=True)
+        st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-label">🌱 Soil Moisture</div>
-                <div class="metric-value">{}%</div>
+                <div class="metric-value">{soil_moisture}%</div>
             </div>
-        """.format(soil_moisture), unsafe_allow_html=True)
-        
-        # Light
-        st.markdown("""
+        """, unsafe_allow_html=True)
+        st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-label">☀️ Light</div>
-                <div class="metric-value">{}</div>
+                <div class="metric-value">{int(light_intensity)}</div>
             </div>
-        """.format(int(light_intensity)), unsafe_allow_html=True)
-        
+        """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Timestamp
         st.markdown(
             f'<div class="status-text">🕐 Last update from the field: {timestamp}</div>',
             unsafe_allow_html=True
@@ -468,7 +466,6 @@ with col1:
                 st.info("**✅ No water needed**")
                 st.write("Conditions are comfortable for the plants. Continue monitoring.")
                 st.progress(conf)
-            
             st.write(f"**Confidence Level:** {conf:.0%}")
         else:
             st.warning("⚠️ Unable to generate irrigation advice at this time.")
@@ -477,17 +474,13 @@ with col1:
     
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------------- RIGHT COLUMN ----------------------
+# RIGHT COLUMN
 with col2:
-    # Sensor History & Trends
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title">📈 Sensor History & Trends</div>', unsafe_allow_html=True)
     
-    # Control section for better organization
     st.markdown('<div class="control-section">', unsafe_allow_html=True)
     st.write("**Chart Configuration**")
-    
-    # Organize controls in columns
     control_col1, control_col2 = st.columns(2)
     
     with control_col1:
@@ -517,14 +510,11 @@ with col2:
     
     df_hist = get_history(limit=points)
     if df_hist is not None:
-        # Display chart
         st.markdown("**Live Trend**")
         st.line_chart(
             df_hist.set_index("created_at")[metric_choice],
             height=320
         )
-        
-        # Recent data table
         st.markdown("**Recent Measurements**")
         st.dataframe(
             df_hist[["created_at", "temperature", "humidity", "soil_moisture", "light_intensity"]].tail(6),
@@ -536,86 +526,50 @@ with col2:
     
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Divider
 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
-# ---------------------- SIMULATION SECTION ----------------------
+# SIMULATION SECTION
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🔬 Simulation Lab</div>', unsafe_allow_html=True)
 st.markdown('<p class="status-text">Test how different environmental conditions affect irrigation needs</p>', unsafe_allow_html=True)
 
 sim_col1, sim_col2 = st.columns([1.2, 1.2])
-
-# Initialize simulation result
 sim_result = None
 
 with sim_col1:
     st.markdown('<div class="simulation-controls">', unsafe_allow_html=True)
     st.write("**Adjust environmental parameters:**")
     
-    # Clean sliders without duplicate value displays
-    sim_temp = st.slider(
-        "🌡️ Temperature (°C)",
-        min_value=0.0,
-        max_value=50.0,
-        value=25.0,
-        step=0.5,
-        key="sim_temp"
-    )
-    
-    sim_soil = st.slider(
-        "💧 Soil Moisture (%)",
-        min_value=0.0,
-        max_value=100.0,
-        value=50.0,
-        step=1.0,
-        key="sim_soil"
-    )
-    
-    sim_hum = st.slider(
-        "🌫️ Air Humidity (%)",
-        min_value=0.0,
-        max_value=100.0,
-        value=60.0,
-        step=1.0,
-        key="sim_hum"
-    )
-    
-    sim_light = st.slider(
-        "☀️ Light Intensity",
-        min_value=0,
-        max_value=1500,
-        value=500,
-        step=10,
-        key="sim_light"
-    )
+    sim_temp = st.slider("🌡️ Temperature (°C)", 0.0, 50.0, 25.0, 0.5, key="sim_temp")
+    sim_soil = st.slider("💧 Soil Moisture (%)", 0.0, 100.0, 50.0, 1.0, key="sim_soil")
+    sim_hum = st.slider("🌫️ Air Humidity (%)", 0.0, 100.0, 60.0, 1.0, key="sim_hum")
+    sim_light = st.slider("☀️ Light Intensity", 0, 1500, 500, 10, key="sim_light")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Show current simulation values in a nice box
-    st.markdown("""
+    st.markdown(f"""
         <div class="current-values">
             <div style="text-align: center; margin-bottom: 0.5rem; font-weight: 600; color: #166534;">Current Simulation Values</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
                 <div style="text-align: center;">
                     <div style="font-size: 0.8rem; color: #4d7c0f;">Temperature</div>
-                    <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{}°C</div>
+                    <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{sim_temp}°C</div>
                 </div>
                 <div style="text-align: center;">
                     <div style="font-size: 0.8rem; color: #4d7c0f;">Soil Moisture</div>
-                    <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{}%</div>
+                    <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{sim_soil}%</div>
                 </div>
                 <div style="text-align: center;">
                     <div style="font-size: 0.8rem; color: #4d7c0f;">Humidity</div>
-                    <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{}%</div>
+                    <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{sim_hum}%</div>
                 </div>
                 <div style="text-align: center;">
                     <div style="font-size: 0.8rem; color: #4d7c0f;">Light</div>
-                    <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{}</div>
+                    <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{sim_light}</div>
                 </div>
             </div>
         </div>
-    """.format(sim_temp, sim_soil, sim_hum, sim_light), unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     
     if artifacts is None:
         st.warning("🤖 The AI model is not loaded. Simulation features are currently unavailable.")
@@ -626,7 +580,6 @@ with sim_col1:
         else:
             sim_decision = sim_result["irrigation_prediction"]
             sim_conf = sim_result["confidence_level"]
-            
             if sim_decision == "yes":
                 st.success(f"💦 **Simulated Advice: Water Recommended**")
                 st.write(f"With these conditions, the model suggests watering with **{sim_conf:.0%} confidence**")
@@ -665,13 +618,12 @@ with sim_col2:
             </div>
         """, unsafe_allow_html=True)
         
-        # Quick stats
         st.markdown("**Simulated Environment:**")
-        col1, col2 = st.columns(2)
-        with col1:
+        c1, c2 = st.columns(2)
+        with c1:
             st.metric("Soil", f"{sim_soil}%")
             st.metric("Light", f"{sim_light}")
-        with col2:
+        with c2:
             st.metric("Temp", f"{sim_temp}°C")
             st.metric("Humidity", f"{sim_hum}%")
     else:
@@ -681,7 +633,7 @@ with sim_col2:
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------------- BOTTOM SECTION ----------------------
+# BOTTOM SECTION
 col3, col4 = st.columns([1, 1])
 
 with col3:
@@ -725,31 +677,30 @@ with col4:
     st.markdown('<div class="card-title">⚡ Quick Stats</div>', unsafe_allow_html=True)
     
     if latest_data:
-        # Quick environmental assessment
         temp_status = "Optimal" if 18 <= temperature <= 28 else "Check"
         moisture_status = "Good" if 40 <= soil_moisture <= 80 else "Monitor"
         light_status = "Adequate" if light_intensity >= 300 else "Low"
         
-        st.markdown("""
+        st.markdown(f"""
             <div style="background: #f0fdf4; padding: 1rem; border-radius: 8px; border-left: 4px solid #22c55e;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
                     <span>Temperature:</span>
-                    <strong>{}</strong>
+                    <strong>{temp_status}</strong>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
                     <span>Soil Moisture:</span>
-                    <strong>{}</strong>
+                    <strong>{moisture_status}</strong>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
                     <span>Light Levels:</span>
-                    <strong>{}</strong>
+                    <strong>{light_status}</strong>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
                     <span>Overall:</span>
                     <strong>Stable</strong>
                 </div>
             </div>
-        """.format(temp_status, moisture_status, light_status), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         
         st.markdown("""
             <div class="status-text" style="margin-top: 1rem;">
