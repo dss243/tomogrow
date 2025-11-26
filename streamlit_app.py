@@ -1,163 +1,289 @@
-# streamlit_mqtt_to_supabase.py
 import streamlit as st
-import threading
-import json
-import time
-import requests
+from supabase import create_client
+import pickle
+import numpy as np
+import os
 import pandas as pd
-from paho.mqtt import client as mqtt_client
 
-# ---------------- CONFIG ----------------
-MQTT_BROKER = "mqtt.wokwi.cloud"
-MQTT_PORT = 1883
-MQTT_TOPIC = "esp32/tomogrow/ESP32_TOMOGROW_001"  # must match ESP32 topic
+# =====================================================
+# Config - Force Light Theme with Green Colors
+# =====================================================
+st.set_page_config(
+    page_title="TomoGrow – Smart Irrigation",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-# Supabase REST settings (use your project's URL & ANON key or service key for dev)
-SUPABASE_URL = "https://ragapkdlgtpmumwlzphs.supabase.co/rest/v1/sensor_data"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZ2Fwa2RsZ3RwbXVtd2x6cGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTYwMDMsImV4cCI6MjA3ODE5MjAwM30.OQj-NFgd6KaDKL1BobPgLOKTCYDFmqw8KnqQFzkFWKo"
+# Force light theme with green colors
+st.markdown(
+    """
+<style>
+.stApp { background-color: #f8fdf8 !important; }
+.main .block-container { background-color: #f8fdf8 !important; padding-top: 1rem; padding-bottom: 1rem; }
 
-HEADERS = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation"
+.stMarkdown, .stText, p, div, span, h1, h2, h3, h4, h5, h6 {
+    color: #1a331c !important;
 }
 
-# ---------------- MQTT -> Supabase bridge ----------------
-st.set_page_config(page_title="MQTT→Supabase Bridge", layout="wide")
+[data-testid="metric-container"] { background-color: transparent !important; }
+[data-testid="metric-container"] label, [data-testid="metric-container"] div { color: #1a331c !important; }
 
-st.title("ESP32 → MQTT → Streamlit → Supabase bridge")
+.dataframe { background-color: white !important; color: #1a331c !important; }
 
-# Status area
-status_placeholder = st.empty()
-log_box = st.empty()
+.stButton button { background-color: #22c55e; color: white; }
 
-# Use a simple thread-safe list for logs
-log_lines = []
-def log(msg):
-    ts = time.strftime("%H:%M:%S")
-    line = f"[{ts}] {msg}"
-    print(line)
-    log_lines.append(line)
-    if len(log_lines) > 200:
-        log_lines.pop(0)
-    # update UI
-    log_box.text("\n".join(log_lines[-20:]))
+.stAlert, .stSuccess, .stInfo, .stWarning, .stError {
+    background-color: #f0f8f0 !important;
+    color: #1a331c !important;
+    border-left: 4px solid #22c55e;
+}
+</style>
+""",
+    unsafe_allow_html=True
+)
 
-# Supabase insert function
-def insert_into_supabase(row: dict):
+# =====================================================
+# Config
+# =====================================================
+SUPABASE_URL = "https://ragapkdlgtpmumwlzphs.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZ2Fwa2RsZ3RwbXVtd2x6cGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTYwMDMsImV4cCI6MjA3ODE5MjAwM30.OQj-NFgd6KaDKL1BobPgLOKTCYDFmqw8KnqQFzkFWKo"
+
+DEVICE_ID = "ESP32_TOMOGROW_001"
+
+# =====================================================
+# Init Supabase
+# =====================================================
+@st.cache_resource
+def init_supabase():
     try:
-        r = requests.post(SUPABASE_URL, headers=HEADERS, json=row, timeout=10)
-        if not r.ok:
-            log(f"Supabase insert failed: {r.status_code} {r.text}")
-            return False
-        # r.json() contains the inserted row if 'Prefer: return=representation' is used
-        log(f"Inserted into Supabase (id maybe): {r.status_code}")
-        return True
+        client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        return client
     except Exception as e:
-        log(f"Supabase request exception: {e}")
-        return False
+        st.error(f"Supabase connection error: {e}")
+        return None
 
-# MQTT callbacks
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        log("Connected to MQTT broker")
-        client.subscribe(MQTT_TOPIC)
-        log(f"Subscribed to: {MQTT_TOPIC}")
-    else:
-        log(f"Failed to connect MQTT, rc={rc}")
+supabase_client = init_supabase()
 
-def on_message(client, userdata, msg):
+# =====================================================
+# Load model artifacts
+# =====================================================
+@st.cache_resource
+def load_model_artifacts():
+    model_path = "fast_tomato_irrigation_model.pkl"
+
+    if not os.path.exists(model_path):
+        st.error("Model file fast_tomato_irrigation_model.pkl was not found.")
+        return None
+
     try:
-        payload = msg.payload.decode()
-        log(f"MQTT message on {msg.topic}: {payload}")
-        data = json.loads(payload)
-        # Ensure fields exist and build row
-        row = {
-            "device_id": data.get("device_id", "unknown"),
-            "temperature": float(data.get("temperature")) if data.get("temperature") is not None else None,
-            "humidity": float(data.get("humidity")) if data.get("humidity") is not None else None,
-            "soil_moisture": float(data.get("soil_moisture")) if data.get("soil_moisture") is not None else None,
-            "light_intensity": int(data.get("light_intensity")) if data.get("light_intensity") is not None else None
+        with open(model_path, "rb") as f:
+            artifacts = pickle.load(f)
+    except Exception as e:
+        st.error(f"Error loading model: {e}")
+        return None
+
+    required = ["model", "scaler", "crop_encoder", "pump_encoder", "feature_names"]
+    if not all(k in artifacts for k in required):
+        st.error("Missing keys in model file.")
+        return None
+
+    return artifacts
+
+artifacts = load_model_artifacts()
+
+# =====================================================
+# Model prediction function
+# =====================================================
+def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
+    if artifacts is None:
+        return None
+
+    model = artifacts["model"]
+    scaler = artifacts["scaler"]
+    crop_encoder = artifacts["crop_encoder"]
+    pump_encoder = artifacts["pump_encoder"]
+
+    try:
+        crop_code = crop_encoder.transform([crop_type])[0]
+    except:
+        st.error("Error encoding crop type.")
+        return None
+
+    features = np.array([
+        [
+            float(temperature),
+            float(soil_moisture),
+            float(humidity),
+            float(light_intensity),
+            crop_code,
+        ]
+    ])
+
+    try:
+        scaled = scaler.transform(features)
+        encoded = model.predict(scaled)[0]
+        probas = model.predict_proba(scaled)[0]
+    except Exception as e:
+        st.error(f"Prediction error: {e}")
+        return None
+
+    decision = pump_encoder.inverse_transform([encoded])[0]
+    confidence = float(probas[encoded])
+
+    return {
+        "irrigation_prediction": decision,
+        "confidence_level": round(min(confidence, 0.95), 4),
+        "probabilities": {
+            "no": round(probas[0], 4),
+            "yes": round(probas[1], 4),
         }
-        # Insert into Supabase
-        ok = insert_into_supabase(row)
-        if ok:
-            log("Row saved to Supabase")
-        else:
-            log("Failed to save row")
-    except Exception as e:
-        log(f"Error processing MQTT message: {e}")
+    }
 
-# Start MQTT client in background thread
-def start_mqtt_client():
-    client_id = f"streamlit-bridge-{int(time.time())}"
-    client = mqtt_client.Client(client_id)
-    client.on_connect = on_connect
-    client.on_message = on_message
 
+def predict_irrigation_model_only(t, s, h, l):
+    return model_predict(t, s, h, l, "tomato")
+
+# =====================================================
+# Fetch data from Supabase
+# =====================================================
+def get_latest_data():
     try:
-        client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+        if supabase_client:
+            resp = (
+                supabase_client.table("sensor_data")
+                .select("*")
+                .eq("device_id", DEVICE_ID)
+                .order("id", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if resp.data:
+                return resp.data[0]
     except Exception as e:
-        log(f"MQTT connect error: {e}")
-        return
+        st.error(f"Error fetching latest data: {e}")
 
-    # loop_forever blocks; run it in this thread
+    return None
+
+
+def get_history(limit=100):
     try:
-        client.loop_forever()
+        resp = (
+            supabase_client.table("sensor_data")
+            .select("*")
+            .eq("device_id", DEVICE_ID)
+            .order("id", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        df = pd.DataFrame(resp.data)
+        if "created_at" in df.columns:
+            df["created_at"] = pd.to_datetime(df["created_at"])
+            df = df.sort_values("created_at")
+        return df
     except Exception as e:
-        log(f"MQTT loop stopped: {e}")
+        st.error(f"Error fetching history: {e}")
+        return None
 
-# Run MQTT thread once
-if "mqtt_thread_started" not in st.session_state:
-    st.session_state.mqtt_thread_started = True
-    t = threading.Thread(target=start_mqtt_client, daemon=True)
-    t.start()
-    log("Starting MQTT background thread...")
+# =====================================================
+# HEADER
+# =====================================================
+st.markdown(
+    """
+<div style="padding: 1.5rem; background: linear-gradient(135deg, #22c55e, #16a34a); 
+border-radius: 12px; text-align:center;">
+    <h1 style="color:white;">🌱 TomoGrow – Smart Irrigation Monitor</h1>
+    <p style="color:#e3ffe8;">Cultivating healthier plants through intelligent irrigation</p>
+</div>
+""",
+    unsafe_allow_html=True
+)
 
-# ---------------- UI: show latest rows from Supabase ----------------
-st.markdown("### Latest sensor rows in Supabase")
-col1, col2 = st.columns([1, 3])
+# =====================================================
+# MAIN LAYOUT
+# =====================================================
+latest_data = get_latest_data()
 
+col1, col2 = st.columns(2)
+
+# ---------------- LEFT SIDE ----------------
 with col1:
-    if st.button("Refresh from Supabase"):
-        pass  # refresh handled below
+    st.markdown("### 📊 Live Field Snapshot")
 
-    st.write("Controls")
-    st.write("MQTT Broker: " + MQTT_BROKER)
-    st.write("MQTT Topic: " + MQTT_TOPIC)
+    if latest_data:
+        temperature = float(latest_data.get("temperature", 0))
+        humidity = float(latest_data.get("humidity", 0))
+        soil_moisture = float(latest_data.get("soil_moisture", 0))
+        light_intensity = float(latest_data.get("light_intensity", 0))
+        timestamp = latest_data.get("created_at", "")
 
-with col2:
-    # Fetch recent rows
-    def fetch_recent(limit=50):
-        try:
-            params = {"select": "*", "limit": limit, "order": "id.desc"}
-            # build query string manually
-            q = SUPABASE_URL + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
-            r = requests.get(q, headers=HEADERS, timeout=10)
-            if not r.ok:
-                st.error(f"Error fetching from Supabase: {r.status_code} {r.text}")
-                return None
-            data = r.json()
-            if not data:
-                return None
-            df = pd.DataFrame(data)
-            if "created_at" in df.columns:
-                df["created_at"] = pd.to_datetime(df["created_at"])
-            return df
-        except Exception as e:
-            st.error(f"Exception fetching Supabase: {e}")
-            return None
+        st.metric("🌡️ Temperature", f"{temperature}°C")
+        st.metric("💧 Humidity", f"{humidity}%")
+        st.metric("🌱 Soil Moisture", f"{soil_moisture}%")
+        st.metric("☀️ Light", f"{light_intensity}")
 
-    df = fetch_recent(limit=50)
-    if df is not None:
-        st.dataframe(df.head(50), use_container_width=True)
+        st.info(f"🕐 Last update: {timestamp}")
     else:
-        st.info("No rows found in Supabase or fetch error (check logs above).")
+        st.warning("No sensor data available yet.")
 
-# Show logs at bottom
+    st.markdown("### 💧 Irrigation Advice")
+
+    if latest_data and artifacts:
+        result = predict_irrigation_model_only(
+            temperature, soil_moisture, humidity, light_intensity
+        )
+        if result:
+            if result["irrigation_prediction"] == "yes":
+                st.success("💦 Water the plants now")
+            else:
+                st.info("✅ No water needed")
+
+            st.progress(result["confidence_level"])
+            st.write(f"**Confidence:** {result['confidence_level'] * 100:.1f}%")
+        else:
+            st.error("Prediction failed.")
+
+# ---------------- RIGHT SIDE ----------------
+with col2:
+    st.markdown("### 📈 Sensor History & Trends")
+
+    points = st.slider("Data points", 20, 200, 80, step=20)
+    metric_choice = st.selectbox(
+        "Metric",
+        ["temperature", "humidity", "soil_moisture", "light_intensity"]
+    )
+
+    df_hist = get_history(points)
+
+    if df_hist is not None:
+        st.line_chart(df_hist.set_index("created_at")[metric_choice])
+        st.dataframe(
+            df_hist[["created_at", "temperature", "humidity", "soil_moisture", "light_intensity"]].tail(8),
+            hide_index=True
+        )
+    else:
+        st.warning("No history data available yet.")
+
+# =====================================================
+# SIMULATION SECTION
+# =====================================================
 st.markdown("---")
-st.markdown("#### Bridge log (latest)")
-log_box.text("\n".join(log_lines[-20:]))
+st.markdown("## 🔬 Simulation Lab")
 
-# End of app
+sim_temp = st.slider("Temperature (°C)", 0.0, 50.0, 25.0)
+sim_soil = st.slider("Soil Moisture (%)", 0.0, 100.0, 50.0)
+sim_hum = st.slider("Air Humidity (%)", 0.0, 100.0, 60.0)
+sim_light = st.slider("Light Intensity", 0, 1500, 500)
+
+if artifacts:
+    sim_res = predict_irrigation_model_only(sim_temp, sim_soil, sim_hum, sim_light)
+
+    if sim_res:
+        st.subheader("Simulation Result")
+        if sim_res["irrigation_prediction"] == "yes":
+            st.success("💦 Water needed")
+        else:
+            st.info("🌿 No water needed")
+
+        st.progress(sim_res["confidence_level"])
+        st.write(f"Confidence: {sim_res['confidence_level'] * 100:.1f}%")
+
