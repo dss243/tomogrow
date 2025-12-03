@@ -240,13 +240,14 @@ def ensure_auth():
             res = supabase_client.auth.sign_in_with_password(
                 {"email": email, "password": password}
             )  # [web:74][web:51]
+            st.write("Auth debug:", res)  # temporary debug
             if res.user is None:
-                st.error("Login failed.")
+                st.error("Login failed. Check email/password or API key.")
             else:
                 st.session_state["user"] = res.user
                 st.experimental_rerun()
         except Exception as e:
-            st.error(f"Login failed: {e}")
+            st.error(f"Login error: {e}")
 
 ensure_auth()
 if "user" not in st.session_state:
@@ -401,7 +402,7 @@ st.markdown(
 )
 
 # =====================================================
-# Main Layout (your UI)
+# Main Layout (same as your old UI)
 # =====================================================
 latest_data = get_latest_data()
 col1, col2 = st.columns([1, 1])
