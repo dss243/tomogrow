@@ -6,7 +6,7 @@ import streamlit as st
 from supabase import create_client
 
 # =====================================================
-# Config
+# Basic config
 # =====================================================
 st.set_page_config(
     page_title="TomoGrow – Smart Irrigation",
@@ -14,12 +14,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
+SUPABASE_URL = "https://ragapkdlgtpmumwlzphs.supabase.co"
+SUPABASE_ANON_KEY = "PASTE_YOUR_ANON_PUBLIC_KEY_HERE"
 DEVICE_ID = "ESP32_TOMOGROW_001"
 
 # =====================================================
-# Init Supabase
+# Supabase init
 # =====================================================
 @st.cache_resource
 def init_supabase():
@@ -33,7 +33,7 @@ def init_supabase():
 supabase_client = init_supabase()
 
 # =====================================================
-# Authentication
+# Authentication (email / password)
 # =====================================================
 def ensure_auth():
     if "user" in st.session_state:
@@ -42,6 +42,7 @@ def ensure_auth():
     st.subheader("Login")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
+
     if st.button("Sign in"):
         try:
             res = supabase_client.auth.sign_in_with_password(
@@ -80,7 +81,7 @@ def load_model_artifacts():
 
     required_keys = ["model", "scaler", "crop_encoder", "pump_encoder", "feature_names"]
     if not all(k in artifacts for k in required_keys):
-        st.error("Model file does not contain all required keys: model, scaler, crop_encoder, pump_encoder, feature_names.")
+        st.error("Model file does not contain all required keys.")
         return None
 
     return artifacts
@@ -96,13 +97,14 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
     crop_encoder = artifacts["crop_encoder"]
     pump_encoder = artifacts["pump_encoder"]
 
+    # encode crop
     try:
         crop_code = crop_encoder.transform([crop_type])[0]
     except Exception as e:
         st.error(f"Error encoding crop type: {e}")
         return None
 
-    features = np.array([[
+    X = np.array([[
         float(temperature),
         float(soil_moisture),
         float(humidity),
@@ -111,27 +113,27 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
     ]])
 
     try:
-        features_scaled = scaler.transform(features)
+        X_scaled = scaler.transform(X)
     except Exception as e:
         st.error(f"Error scaling features: {e}")
         return None
 
     try:
-        prediction_encoded = model.predict(features_scaled)[0]
-        probabilities = model.predict_proba(features_scaled)[0]
+        y_enc = model.predict(X_scaled)[0]
+        proba = model.predict_proba(X_scaled)[0]
     except Exception as e:
         st.error(f"Error during model prediction: {e}")
         return None
 
-    prediction_label = pump_encoder.inverse_transform([prediction_encoded])[0]
-    confidence = float(probabilities[prediction_encoded])
+    label = pump_encoder.inverse_transform([y_enc])[0]
+    conf = float(proba[y_enc])
 
     return {
-        "irrigation_prediction": prediction_label,
-        "confidence_level": round(min(confidence, 0.95), 4),
+        "irrigation_prediction": label,
+        "confidence_level": round(min(conf, 0.95), 4),
         "probabilities": {
-            "no": round(probabilities[0], 4),
-            "yes": round(probabilities[1], 4),
+            "no": round(proba[0], 4),
+            "yes": round(proba[1], 4),
         },
     }
 
@@ -139,7 +141,7 @@ def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_in
     return model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato")
 
 # =====================================================
-# Fetch data from Supabase (per-user)
+# Data access with authorization (user_id + device_id)
 # =====================================================
 def get_latest_data():
     try:
@@ -154,7 +156,7 @@ def get_latest_data():
                 .order("id", desc=True)
                 .limit(1)
                 .execute()
-            )  # [web:69][web:78]
+            )  # [web:109]
             if response.data:
                 return response.data[0]
     except Exception as e:
@@ -175,10 +177,10 @@ def get_history(limit: int = 100):
                 .limit(limit)
                 .execute()
             )
-            data = response.data or []
-            if not data:
+            rows = response.data or []
+            if not rows:
                 return None
-            df = pd.DataFrame(data)
+            df = pd.DataFrame(rows)
             if "created_at" in df.columns:
                 df["created_at"] = pd.to_datetime(df["created_at"])
             df = df.sort_values("created_at")
@@ -188,33 +190,43 @@ def get_history(limit: int = 100):
     return None
 
 # =====================================================
-# Styling (same as you already have)
+# Styling (paste your CSS here if you want)
 # =====================================================
-# keep your existing CSS & layout here (omitted to save space)
-# paste your big st.markdown CSS block and UI sections exactly as before
+# You can paste your previous big st.markdown CSS block and header here.
+# For brevity, this example keeps UI simple.
 
-# For brevity, only showing the data usage part:
+st.title("TomoGrow – Smart Irrigation Monitor")
 
+# =====================================================
+# Layout – Live + History + Simulation
+# =====================================================
 latest_data = get_latest_data()
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    # Live Field Snapshot
+    st.subheader("Live Field Snapshot")
+
     if latest_data:
         temperature = float(latest_data.get("temperature", 0))
         humidity = float(latest_data.get("humidity", 0))
         soil_moisture = float(latest_data.get("soil_moisture", 0))
         light_intensity = float(latest_data.get("light_intensity", 0))
-        # ... your nice HTML cards here ...
-    else:
-        st.info("No sensor data available for this user and device.")
+        timestamp = latest_data.get("created_at", "")
 
-    # Irrigation Advice
+        st.metric("Temperature (°C)", f"{temperature:.1f}")
+        st.metric("Humidity (%)", f"{humidity:.1f}")
+        st.metric("Soil moisture (%)", f"{soil_moisture:.1f}")
+        st.metric("Light", int(light_intensity))
+        st.caption(f"Last update: {timestamp}")
+    else:
+        st.info("No sensor data available yet for this user and device.")
+
+    st.subheader("Irrigation Advice")
     if latest_data and artifacts is not None:
-        result = predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity)
-        if result:
-            decision = result["irrigation_prediction"]
-            conf = result["confidence_level"]
+        res = predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity)
+        if res:
+            decision = res["irrigation_prediction"]
+            conf = res["confidence_level"]
             if decision == "yes":
                 st.success("Water the plants now")
             else:
@@ -226,15 +238,57 @@ with col1:
         st.info("Waiting for data and model to generate irrigation advice.")
 
 with col2:
-    st.subheader("History")
+    st.subheader("Sensor History & Trends")
     points = st.slider("Data points to display", 20, 200, 80, 20)
     df_hist = get_history(limit=points)
     if df_hist is not None:
-        st.line_chart(df_hist.set_index("created_at")["soil_moisture"])
+        metric_choice = st.selectbox(
+            "Metric",
+            ["temperature", "humidity", "soil_moisture", "light_intensity"],
+            index=2,
+        )
+        st.line_chart(df_hist.set_index("created_at")[metric_choice])
         st.dataframe(
             df_hist[["created_at", "temperature", "humidity", "soil_moisture", "light_intensity"]].tail(6),
             use_container_width=True,
             hide_index=True,
         )
     else:
-        st.info("No historical data for this user yet.")
+        st.info("No historical data yet for this user and device.")
+
+st.subheader("Simulation Lab")
+
+sim_col1, sim_col2 = st.columns(2)
+with sim_col1:
+    sim_temp = st.slider("Temperature (°C)", 0.0, 50.0, 25.0, 0.5)
+    sim_soil = st.slider("Soil Moisture (%)", 0.0, 100.0, 50.0, 1.0)
+    sim_hum = st.slider("Humidity (%)", 0.0, 100.0, 60.0, 1.0)
+    sim_light = st.slider("Light Intensity", 0, 1500, 500, 10)
+
+    if artifacts is None:
+        st.warning("Model not loaded; simulation unavailable.")
+        sim_result = None
+    else:
+        sim_result = model_predict(sim_temp, sim_soil, sim_hum, sim_light, crop_type="tomato")
+        if sim_result is None:
+            st.error("Could not compute simulation.")
+        else:
+            dec = sim_result["irrigation_prediction"]
+            conf = sim_result["confidence_level"]
+            if dec == "yes":
+                st.success(f"Simulated: Water recommended ({conf:.0%} confidence)")
+            else:
+                st.info(f"Simulated: No water needed ({conf:.0%} confidence)")
+
+with sim_col2:
+    st.write("Simulated Plant State")
+    if artifacts is not None and sim_result is not None:
+        if sim_soil > 70 and sim_result["irrigation_prediction"] == "no":
+            st.success("Plant: Thriving")
+        elif sim_soil < 40 or sim_result["irrigation_prediction"] == "yes":
+            st.warning("Plant: Stressed – likely needs water")
+        else:
+            st.info("Plant: Stable growth")
+    else:
+        st.info("Adjust sliders and make sure model is loaded.")
+
