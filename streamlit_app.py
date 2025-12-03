@@ -14,10 +14,11 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Force light theme with green colors (your original CSS)
+# Force light theme with green colors
 st.markdown(
     """
     <style>
+    /* Force complete light theme with green accents */
     .stApp {
         background-color: #f8fdf8 !important;
     }
@@ -26,26 +27,32 @@ st.markdown(
         padding-top: 1rem;
         padding-bottom: 1rem;
     }
+    /* Make all text dark */
     .stMarkdown, .stText, .stWrite, p, div, span, h1, h2, h3, h4, h5, h6 {
         color: #1a331c !important;
     }
+    /* Fix metric colors with green theme */
     [data-testid="metric-container"] {
         background-color: transparent !important;
     }
     [data-testid="metric-container"] label, [data-testid="metric-container"] div {
         color: #1a331c !important;
     }
+    /* Fix dataframe colors */
     .dataframe {
         background-color: white !important;
         color: #1a331c !important;
     }
+    /* Base slider and selectbox container */
     .stSlider, .stSelectbox {
         background-color: transparent !important;
         color: #1a331c !important;
     }
+
+    /* ========== SLIDER TRACK / RECTANGLE FIX ========== */
     div.stSlider > div[data-baseweb="slider"] > div[data-testid="stTickBar"] {
-        background: #22c55e !important;
-        height: 4px !important;
+        background: #22c55e !important;      /* track color */
+        height: 4px !important;              /* thinner bar */
         border-radius: 999px !important;
     }
     div.stSlider > div[data-baseweb="slider"] {
@@ -58,18 +65,25 @@ st.markdown(
         border: 2px solid #ffffff !important;
         box-shadow: 0 0 0 3px rgba(34,197,94,0.35) !important;
     }
+    /* ================================================ */
+
+    /* Green alerts */
     .stAlert, .stSuccess, .stInfo, .stWarning, .stError {
         background-color: #f0f8f0 !important;
         color: #1a331c !important;
         border-left: 4px solid #22c55e;
     }
+    /* Green progress bars */
     .stProgress > div > div {
         background-color: #22c55e;
     }
+    /* Green buttons */
     .stButton button {
         background-color: #22c55e;
         color: white;
     }
+
+    /* Green theme extras */
     .header {
         padding: 1.5rem 0;
         margin-bottom: 2rem;
@@ -204,11 +218,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# =====================================================
-# Supabase config
-# =====================================================
 SUPABASE_URL = "https://ragapkdlgtpmumwlzphs.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZ2Fwa2RsZ3RwbXVtd2x6cGhzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MjYxNjAwMywiZXhwIjoyMDc4MTkyMDAzfQ.UTu1ldJK-llqtFGtcD26AKfdflXOriZ-pmuSEGhI9KE"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZ2Fwa2RsZ3RwbXVtd2x6cGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTYwMDMsImV4cCI6MjA3ODE5MjAwM30.OQj-NFgd6KaDKL1BobPgLOKTCYDFmqw8KnqQFzkFWKo"
 DEVICE_ID = "ESP32_TOMOGROW_001"
 
 # =====================================================
@@ -239,7 +250,7 @@ def ensure_auth():
         try:
             res = supabase_client.auth.sign_in_with_password(
                 {"email": email, "password": password}
-            )  # [web:74]
+            )  # [web:74][web:51]
             if res.user is None:
                 st.error("Login failed.")
             else:
@@ -281,7 +292,7 @@ def load_model_artifacts():
 artifacts = load_model_artifacts()
 
 # =====================================================
-# Prediction – pure model decision
+# Prediction – pure model decision (reusable)
 # =====================================================
 def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
     if artifacts is None:
@@ -343,18 +354,16 @@ def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_in
     return model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato")
 
 # =====================================================
-# Fetch data from Supabase – per user + device
+# Fetch data from Supabase (no user filter yet)
 # =====================================================
 def get_latest_data():
     try:
-        if supabase_client and current_user:
-            user_id = current_user.id
+        if supabase_client:
             response = (
                 supabase_client
                 .table("sensor_data")
                 .select("*")
                 .eq("device_id", DEVICE_ID)
-                .eq("user_id", user_id)
                 .order("id", desc=True)
                 .limit(1)
                 .execute()
@@ -367,14 +376,12 @@ def get_latest_data():
 
 def get_history(limit: int = 100):
     try:
-        if supabase_client and current_user:
-            user_id = current_user.id
+        if supabase_client:
             response = (
                 supabase_client
                 .table("sensor_data")
                 .select("*")
                 .eq("device_id", DEVICE_ID)
-                .eq("user_id", user_id)
                 .order("id", desc=True)
                 .limit(limit)
                 .execute()
@@ -405,7 +412,7 @@ st.markdown(
 )
 
 # =====================================================
-# Main Layout (kept same structure as your old code)
+# Main Layout
 # =====================================================
 latest_data = get_latest_data()
 col1, col2 = st.columns([1, 1])
@@ -537,7 +544,7 @@ with col2:
 
 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
-# SIMULATION SECTION (kept as your original)
+# SIMULATION SECTION
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🔬 Simulation Lab</div>', unsafe_allow_html=True)
 st.markdown('<p class="status-text">Test how different environmental conditions affect irrigation needs</p>', unsafe_allow_html=True)
