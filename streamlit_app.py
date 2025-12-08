@@ -239,13 +239,15 @@ def ensure_auth():
         try:
             res = supabase_client.auth.sign_in_with_password(
                 {"email": email, "password": password}
-            )  # [web:74][web:51]
-            st.write("Auth debug:", res)  # temporary debug
+            )
+            st.write("Auth debug user:", res.user)
+            st.write("Auth debug session:", res.session)
             if res.user is None:
                 st.error("Login failed. Check email/password or API key.")
             else:
                 st.session_state["user"] = res.user
-                st.experimental_rerun()
+                # UPDATED: use st.rerun instead of experimental_rerun
+                st.rerun()
         except Exception as e:
             st.error(f"Login error: {e}")
 
@@ -254,6 +256,7 @@ if "user" not in st.session_state:
     st.stop()
 
 current_user = st.session_state["user"]
+st.write("Current logged user id:", current_user.id)
 
 # =====================================================
 # Load model artifacts
@@ -357,7 +360,8 @@ def get_latest_data():
                 .order("id", desc=True)
                 .limit(1)
                 .execute()
-            )  # [web:109]
+            )
+            st.write("Debug latest response:", response)
             if response.data:
                 return response.data[0]
     except Exception as e:
@@ -376,6 +380,7 @@ def get_history(limit: int = 100):
                 .limit(limit)
                 .execute()
             )
+            st.write("Debug history count:", len(response.data or []))
             data = response.data or []
             if not data:
                 return None
