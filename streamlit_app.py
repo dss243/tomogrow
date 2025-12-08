@@ -14,7 +14,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Force light theme with green colors and UI styling
 st.markdown(
     """
     <style>
@@ -216,6 +215,7 @@ DEVICE_ID = "ESP32_TOMOGROW_001"
 # =====================================================
 @st.cache_resource
 def init_supabase():
+    from supabase import create_client
     try:
         client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
         return client
@@ -244,7 +244,7 @@ def ensure_auth():
                 st.error("Login failed. Check email/password or API key.")
             else:
                 st.session_state["user"] = res.user
-                st.rerun()  # updated API
+                st.rerun()
         except Exception as e:
             st.error(f"Login error: {e}")
 
@@ -353,6 +353,7 @@ def get_latest_data():
                 .table("sensor_data")
                 .select("*")
                 .eq("device_id", DEVICE_ID)
+                .eq("user_id", current_user.id)
                 .order("id", desc=True)
                 .limit(1)
                 .execute()
@@ -371,6 +372,7 @@ def get_history(limit: int = 100):
                 .table("sensor_data")
                 .select("*")
                 .eq("device_id", DEVICE_ID)
+                .eq("user_id", current_user.id)
                 .order("id", desc=True)
                 .limit(limit)
                 .execute()
@@ -464,11 +466,11 @@ with col1:
             conf = result["confidence_level"]
             
             if decision == "yes":
-                st.success("**💦 Water the plants now**")
+                st.success("💦 Water the plants now")
                 st.write("Current conditions suggest watering would benefit the plants for optimal growth.")
                 st.progress(conf)
             else:
-                st.info("**✅ No water needed**")
+                st.info("✅ No water needed")
                 st.write("Conditions are comfortable for the plants. Continue monitoring.")
                 st.progress(conf)
             st.write(f"**Confidence Level:** {conf:.0%}")
@@ -586,15 +588,15 @@ with sim_col1:
             sim_decision = sim_result["irrigation_prediction"]
             sim_conf = sim_result["confidence_level"]
             if sim_decision == "yes":
-                st.success(f"💦 **Simulated Advice: Water Recommended**")
+                st.success(f"💦 Simulated Advice: Water Recommended")
                 st.write(f"With these conditions, the model suggests watering with **{sim_conf:.0%} confidence**")
             else:
-                st.info(f"✅ **Simulated Advice: No Water Needed**")
+                st.info(f"✅ Simulated Advice: No Water Needed")
                 st.write(f"Current simulated conditions don't require watering (**{sim_conf:.0%} confidence**)")
 
 with sim_col2:
     st.markdown('<div class="simulation-controls">', unsafe_allow_html=True)
-    st.write("**🌿 Simulated Plant Response**")
+    st.write("🌿 Simulated Plant Response")
     
     if artifacts is not None and sim_result is not None:
         sim_decision = sim_result["irrigation_prediction"]
