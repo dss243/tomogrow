@@ -196,7 +196,7 @@ st.markdown(
 # Supabase config
 # =====================================================
 SUPABASE_URL = "https://ragapkdlgtpmumwlzphs.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZ2Fwa2RsZ3RwbXVtd2x6cGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTYwMDMsImV4cCI6MjA3ODE5MjAwM30.OQj-NFgd6KaDKL1BobPgLOKTCYDFmqw8KnqQFzkFWKo"
+SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE"  # keep your real anon key
 DEVICE_ID = "ESP32_TOMOGROW_001"
 
 @st.cache_resource
@@ -240,7 +240,7 @@ if "user" not in st.session_state:
 current_user = st.session_state["user"]
 
 # =====================================================
-# Role loading
+# Role loading from profiles
 # =====================================================
 @st.cache_data(show_spinner=False)
 def get_current_role(user_id: str):
@@ -294,6 +294,7 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
     scaler = artifacts["scaler"]
     crop_encoder = artifacts["crop_encoder"]
     pump_encoder = artifacts["pump_encoder"]
+
     input_data = {
         "Crop_Type": crop_type,
         "Temperature": float(temperature),
@@ -301,11 +302,13 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
         "Humidity": float(humidity),
         "Light_Intensity": float(light_intensity),
     }
+
     try:
         crop_code = crop_encoder.transform([input_data["Crop_Type"]])[0]
     except Exception as e:
         st.error(f"Error encoding crop type: {e}")
         return None
+
     features = np.array([[
         input_data["Temperature"],
         input_data["Soil_Moisture"],
@@ -313,19 +316,23 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
         input_data["Light_Intensity"],
         crop_code,
     ]])
+
     try:
         features_scaled = scaler.transform(features)
     except Exception as e:
         st.error(f"Error scaling features: {e}")
         return None
+
     try:
         prediction_encoded = model.predict(features_scaled)[0]
         probabilities = model.predict_proba(features_scaled)[0]
     except Exception as e:
         st.error(f"Error during model prediction: {e}")
         return None
+
     prediction_label = pump_encoder.inverse_transform([prediction_encoded])[0]
     confidence = float(probabilities[prediction_encoded])
+
     return {
         "irrigation_prediction": prediction_label,
         "confidence_level": round(min(confidence, 0.95), 4),
@@ -339,7 +346,7 @@ def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_in
     return model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato")
 
 # =====================================================
-# Data access helpers (farmer scope)
+# Data access (visible to all farmers, only filter by device)
 # =====================================================
 def get_latest_data():
     try:
@@ -349,7 +356,6 @@ def get_latest_data():
                 .table("sensor_data")
                 .select("*")
                 .eq("device_id", DEVICE_ID)
-                .eq("user_id", current_user.id)
                 .order("id", desc=True)
                 .limit(1)
                 .execute()
@@ -368,7 +374,6 @@ def get_history(limit: int = 100):
                 .table("sensor_data")
                 .select("*")
                 .eq("device_id", DEVICE_ID)
-                .eq("user_id", current_user.id)
                 .order("id", desc=True)
                 .limit(limit)
                 .execute()
@@ -401,7 +406,7 @@ st.markdown(
 )
 
 # =====================================================
-# FARMER DASHBOARD (existing UI)
+# FARMER DASHBOARD (with Simulation Lab)
 # =====================================================
 def render_farmer_dashboard():
     latest_data = get_latest_data()
@@ -411,14 +416,14 @@ def render_farmer_dashboard():
     with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">📊 Live Field Snapshot</div>', unsafe_allow_html=True)
-        
+
         if latest_data:
             temperature = float(latest_data.get("temperature", 0))
             humidity = float(latest_data.get("humidity", 0))
             soil_moisture = float(latest_data.get("soil_moisture", 0))
             light_intensity = float(latest_data.get("light_intensity", 0))
             timestamp = latest_data.get("created_at", "")
-            
+
             st.markdown('<div class="metric-grid">', unsafe_allow_html=True)
             st.markdown(f"""
                 <div class="metric-card">
@@ -451,19 +456,19 @@ def render_farmer_dashboard():
             )
         else:
             st.info("📡 No sensor data available. Data will appear when the device starts sending.")
-        
+
         st.markdown("</div>", unsafe_allow_html=True)
 
         # Irrigation Advice
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">💧 Irrigation Advice</div>', unsafe_allow_html=True)
-        
+
         if latest_data and artifacts is not None:
             result = predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity)
             if result:
                 decision = result["irrigation_prediction"]
                 conf = result["confidence_level"]
-                
+
                 if decision == "yes":
                     st.success("💦 Water the plants now")
                     st.write("Current conditions suggest watering would benefit the plants for optimal growth.")
@@ -477,18 +482,18 @@ def render_farmer_dashboard():
                 st.warning("⚠️ Unable to generate irrigation advice at this time.")
         else:
             st.info("⏳ Waiting for data and model to generate irrigation advice.")
-        
+
         st.markdown("</div>", unsafe_allow_html=True)
 
     # RIGHT COLUMN
     with col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">📈 Sensor History & Trends</div>', unsafe_allow_html=True)
-        
+
         st.markdown('<div class="control-section">', unsafe_allow_html=True)
         st.write("**Chart Configuration**")
         control_col1, control_col2 = st.columns(2)
-        
+
         with control_col1:
             points = st.slider(
                 "Data points to display",
@@ -498,7 +503,7 @@ def render_farmer_dashboard():
                 step=20,
                 help="Number of historical data points to show on the chart"
             )
-        
+
         with control_col2:
             metric_choice = st.selectbox(
                 "Select metric",
@@ -511,9 +516,9 @@ def render_farmer_dashboard():
                     "light_intensity": "☀️ Light Intensity"
                 }[x]
             )
-        
+
         st.markdown('</div>', unsafe_allow_html=True)
-        
+
         df_hist = get_history(limit=points)
         if df_hist is not None:
             st.markdown("**Live Trend**")
@@ -529,30 +534,131 @@ def render_farmer_dashboard():
             )
         else:
             st.info("📊 No historical data available yet. Data will accumulate over time.")
-        
+
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
-    # (Simulation + bottom cards can stay as in your current file; omitted here to keep answer shorter.)
+    # SIMULATION SECTION (kept from your old version)
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">🔬 Simulation Lab</div>', unsafe_allow_html=True)
+    st.markdown('<p class="status-text">Test how different environmental conditions affect irrigation needs</p>', unsafe_allow_html=True)
+
+    sim_col1, sim_col2 = st.columns([1.2, 1.2])
+    sim_result = None
+
+    with sim_col1:
+        st.markdown('<div class="simulation-controls">', unsafe_allow_html=True)
+        st.write("**Adjust environmental parameters:**")
+
+        sim_temp = st.slider("🌡️ Temperature (°C)", 0.0, 50.0, 25.0, 0.5, key="sim_temp")
+        sim_soil = st.slider("💧 Soil Moisture (%)", 0.0, 100.0, 50.0, 1.0, key="sim_soil")
+        sim_hum = st.slider("🌫️ Air Humidity (%)", 0.0, 100.0, 60.0, 1.0, key="sim_hum")
+        sim_light = st.slider("☀️ Light Intensity", 0, 1500, 500, 10, key="sim_light")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown(f"""
+            <div class="current-values">
+                <div style="text-align: center; margin-bottom: 0.5rem; font-weight: 600; color: #166534;">Current Simulation Values</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.8rem; color: #4d7c0f;">Temperature</div>
+                        <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{sim_temp}°C</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.8rem; color: #4d7c0f;">Soil Moisture</div>
+                        <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{sim_soil}%</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.8rem; color: #4d7c0f;">Humidity</div>
+                        <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{sim_hum}%</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.8rem; color: #4d7c0f;">Light</div>
+                        <div style="font-size: 1.1rem; font-weight: 600; color: #166534;">{sim_light}</div>
+                    </div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if artifacts is None:
+            st.warning("🤖 The AI model is not loaded. Simulation features are currently unavailable.")
+        else:
+            sim_result = model_predict(sim_temp, sim_soil, sim_hum, sim_light, crop_type="tomato")
+            if sim_result is None:
+                st.error("❌ Could not compute simulation with these values.")
+            else:
+                sim_decision = sim_result["irrigation_prediction"]
+                sim_conf = sim_result["confidence_level"]
+                if sim_decision == "yes":
+                    st.success(f"💦 Simulated Advice: Water Recommended")
+                    st.write(f"With these conditions, the model suggests watering with **{sim_conf:.0%} confidence**")
+                else:
+                    st.info(f"✅ Simulated Advice: No Water Needed")
+                    st.write(f"Current simulated conditions don't require watering (**{sim_conf:.0%} confidence**)")
+
+    with sim_col2:
+        st.markdown('<div class="simulation-controls">', unsafe_allow_html=True)
+        st.write("🌿 Simulated Plant Response")
+
+        if artifacts is not None and sim_result is not None:
+            sim_decision = sim_result["irrigation_prediction"]
+
+            if sim_soil > 70 and sim_decision == "no":
+                sim_state_label = "Thriving"
+                sim_emoji = "🌿"
+                sim_note = "Perfect conditions! The plant would be lush and vibrant with optimal soil moisture."
+                sim_status_class = "plant-status-healthy"
+            elif sim_soil < 40 or sim_decision == "yes":
+                sim_state_label = "Stressed"
+                sim_emoji = "🥀"
+                sim_note = "The plant would show signs of dehydration. Leaves might droop and soil feels dry."
+                sim_status_class = "plant-status-attention"
+            else:
+                sim_state_label = "Stable"
+                sim_emoji = "🌱"
+                sim_note = "The plant would be growing steadily but could benefit from improved conditions."
+                sim_status_class = "plant-status-stable"
+
+            st.markdown(f"""
+                <div class="metric-card {sim_status_class}" style="text-align: center; padding: 1.5rem;">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">{sim_emoji}</div>
+                    <div style="font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; color: inherit;">{sim_state_label}</div>
+                    <div style="font-size: 0.9rem; color: inherit;">{sim_note}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("**Simulated Environment:**")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric("Soil", f"{sim_soil}%")
+                st.metric("Light", f"{sim_light}")
+            with c2:
+                st.metric("Temp", f"{sim_temp}°C")
+                st.metric("Humidity", f"{sim_hum}%")
+        else:
+            st.info("🎛️ Adjust the sliders on the left to see how different conditions affect plant health and irrigation needs.")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================
-# ADMIN DASHBOARD (placeholder for now)
+# ADMIN DASHBOARD
 # =====================================================
 def render_admin_dashboard():
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title">👩‍💻 Admin Panel – Users & Devices</div>', unsafe_allow_html=True)
+    st.write("Simple admin view of recent sensor data for all devices/users.")
 
-    st.write("This is a first simple admin view. It will later show full user and device management.")
-
-    # Example: list last 20 sensor_data rows (all users)
     try:
         res = (
             supabase_client
             .table("sensor_data")
             .select("id, device_id, user_id, temperature, soil_moisture, created_at")
             .order("id", desc=True)
-            .limit(20)
+            .limit(50)
             .execute()
         )
         df = pd.DataFrame(res.data or [])
