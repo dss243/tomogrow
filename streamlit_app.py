@@ -7,7 +7,7 @@ import pandas as pd
 from cryptography.fernet import Fernet
 
 # =====================================================
-# Page & Styling
+# Config - Force Light Theme with Green Colors
 # =====================================================
 st.set_page_config(
     page_title="TomoGrow – Smart Irrigation",
@@ -203,12 +203,10 @@ DEVICE_ID = "ESP32_TOMOGROW_001"
 DATA_ENCRYPTION_KEY = st.secrets["DATA_ENCRYPTION_KEY"]
 cipher = Fernet(DATA_ENCRYPTION_KEY)
 
-
 def dec_number(s):
     if s is None:
         return None
     return float(cipher.decrypt(s.encode()).decode())
-
 
 @st.cache_resource
 def init_supabase():
@@ -218,7 +216,6 @@ def init_supabase():
     except Exception as e:
         st.error(f"Supabase connection error: {e}")
         return None
-
 
 supabase_client = init_supabase()
 
@@ -244,7 +241,6 @@ def ensure_auth():
                 st.rerun()
         except Exception as e:
             st.error(f"Login error: {e}")
-
 
 ensure_auth()
 if "user" not in st.session_state:
@@ -272,7 +268,6 @@ def get_current_role(user_id: str):
     except Exception:
         return "farmer"
 
-
 if "role" not in st.session_state:
     st.session_state["role"] = get_current_role(current_user.id)
 
@@ -299,9 +294,7 @@ def load_model_artifacts():
         return None
     return artifacts
 
-
 artifacts = load_model_artifacts()
-
 
 def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
     if artifacts is None:
@@ -358,7 +351,6 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
         },
     }
 
-
 def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity):
     return model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato")
 
@@ -382,7 +374,6 @@ def get_latest_data():
     except Exception as e:
         st.error(f"Error fetching latest data: {e}")
     return None
-
 
 def get_history(limit: int = 100):
     try:
@@ -566,7 +557,7 @@ def render_farmer_dashboard():
 
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
-    # SIMULATION SECTION (unchanged logic)
+    # SIMULATION SECTION
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title">🔬 Simulation Lab</div>', unsafe_allow_html=True)
     st.markdown('<p class="status-text">Test how different environmental conditions affect irrigation needs</p>', unsafe_allow_html=True)
