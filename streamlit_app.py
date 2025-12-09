@@ -188,6 +188,22 @@ st.markdown(
         border: 1px solid #bbf7d0;
         margin-top: 1rem;
     }
+    .login-container {
+        max-width: 400px;
+        margin: 100px auto;
+        padding: 2rem;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(34, 197, 94, 0.1);
+        border: 1px solid #dcfce7;
+    }
+    .login-title {
+        text-align: center;
+        color: #166534;
+        margin-bottom: 1.5rem;
+        font-size: 1.5rem;
+        font-weight: 600;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -212,9 +228,13 @@ def dec_number(s):
 def init_supabase():
     try:
         client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        # Test connection by making a simple query
+        response = client.table("profiles").select("*").limit(1).execute()
+        st.success("✅ Connected to Supabase successfully")
         return client
     except Exception as e:
-        st.error(f"Supabase connection error: {e}")
+        st.error(f"❌ Supabase connection error: {e}")
+        st.info("Please check your Supabase URL and Anon Key in secrets.toml")
         return None
 
 supabase_client = init_supabase()
@@ -226,29 +246,71 @@ def ensure_auth():
     if "user" in st.session_state:
         return
 
-    st.subheader("Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-    if st.button("Sign in"):
-        if not email or not password:
-            st.error("Please enter both email and password.")
-        else:
-            try:
-                res = supabase_client.auth.sign_in_with_password(
-                    {"email": email, "password": password}
-                )
-                if res.user is None:
-                    st.error("Login failed. Check email/password.")
-                else:
-                    st.session_state["user"] = res.user
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Login error: {e}")
+    # First, ensure Supabase client is initialized
+    if supabase_client is None:
+        st.error("Database connection failed. Cannot authenticate.")
+        st.stop()
 
-ensure_auth()
-if "user" not in st.session_state:
+    # Display login form
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    st.markdown('<div class="login-title">🌱 TomoGrow Login</div>', unsafe_allow_html=True)
+    
+    email = st.text_input("Email", value="soundous@gmail.com", placeholder="Enter your email")
+    password = st.text_input("Password", type="password", placeholder="Enter your password")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("Sign In", type="primary", use_container_width=True):
+            # Validate inputs
+            if not email or not password:
+                st.error("Please enter both email and password")
+                st.stop()
+            
+            try:
+                # Use the correct auth method signature
+                auth_response = supabase_client.auth.sign_in_with_password({
+                    "email": email.strip(),
+                    "password": password.strip()
+                })
+                
+                if auth_response.user:
+                    st.session_state["user"] = auth_response.user
+                    st.session_state["user_email"] = auth_response.user.email
+                    st.success(f"Welcome, {auth_response.user.email}!")
+                    st.rerun()
+                else:
+                    st.error("Login failed. Please check your credentials.")
+                    
+            except Exception as e:
+                # Provide more detailed error information
+                error_msg = str(e)
+                if "Invalid login credentials" in error_msg:
+                    st.error("Invalid email or password. Please try again.")
+                elif "Email not confirmed" in error_msg:
+                    st.error("Please confirm your email address before logging in.")
+                elif "rate limit" in error_msg.lower():
+                    st.error("Too many login attempts. Please try again later.")
+                else:
+                    st.error(f"Login error: {error_msg}")
+                
+                # Debug information
+                with st.expander("Troubleshooting Tips"):
+                    st.write("""
+                    1. Check if the user exists in Supabase Auth → Users
+                    2. Verify email is confirmed
+                    3. Check your internet connection
+                    4. Ensure Supabase project is running
+                    """)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Don't proceed if not authenticated
     st.stop()
 
+# Call authentication function
+ensure_auth()
+
+# Now we have a user, proceed
 current_user = st.session_state["user"]
 
 # =====================================================
@@ -396,6 +458,7 @@ def get_history(limit: int = 100):
             df = pd.DataFrame(data)
             if "created_at" in df.columns:
                 df["created_at"] = pd.to_datetime(df["created_at"])
+            # Decrypt columns
             if "temperature" in df.columns:
                 df["temperature"] = df["temperature"].apply(dec_number)
             if "humidity" in df.columns:
@@ -418,7 +481,7 @@ st.markdown(
     <div class="header">
         <div class="header-title">🌱 TomoGrow – Smart Irrigation Monitor</div>
         <div class="header-subtitle">
-            Role: {role.capitalize()}
+            Welcome, {current_user.email} | Role: {role.capitalize()} | Device: {DEVICE_ID}
         </div>
     </div>
     """,
@@ -484,6 +547,11 @@ def render_farmer_dashboard():
         st.markdown('<div class="card-title">💧 Irrigation Advice</div>', unsafe_allow_html=True)
 
         if latest_data and artifacts is not None:
+            temperature = dec_number(latest_data.get("temperature"))
+            humidity = dec_number(latest_data.get("humidity"))
+            soil_moisture = dec_number(latest_data.get("soil_moisture"))
+            light_intensity = dec_number(latest_data.get("light_intensity"))
+            
             result = predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity)
             if result:
                 decision = result["irrigation_prediction"]
@@ -612,10 +680,10 @@ def render_farmer_dashboard():
                 sim_decision = sim_result["irrigation_prediction"]
                 sim_conf = sim_result["confidence_level"]
                 if sim_decision == "yes":
-                    st.success("💦 Simulated Advice: Water Recommended")
+                    st.success(f"💦 Simulated Advice: Water Recommended")
                     st.write(f"With these conditions, the model suggests watering with **{sim_conf:.0%} confidence**")
                 else:
-                    st.info("✅ Simulated Advice: No Water Needed")
+                    st.info(f"✅ Simulated Advice: No Water Needed")
                     st.write(f"Current simulated conditions don't require watering (**{sim_conf:.0%} confidence**)")
 
     with sim_col2:
@@ -692,6 +760,15 @@ def render_admin_dashboard():
         st.error(f"Error loading admin data: {e}")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+# =====================================================
+# Logout button
+# =====================================================
+with st.sidebar:
+    if st.button("🚪 Logout"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
 
 # =====================================================
 # ROUTER
