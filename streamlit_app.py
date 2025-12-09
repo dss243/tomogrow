@@ -230,17 +230,20 @@ def ensure_auth():
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
     if st.button("Sign in"):
-        try:
-            res = supabase_client.auth.sign_in_with_password(
-                {"email": email, "password": password}
-            )
-            if res.user is None:
-                st.error("Login failed. Check email/password or API key.")
-            else:
-                st.session_state["user"] = res.user
-                st.rerun()
-        except Exception as e:
-            st.error(f"Login error: {e}")
+        if not email or not password:
+            st.error("Please enter both email and password.")
+        else:
+            try:
+                res = supabase_client.auth.sign_in_with_password(
+                    {"email": email, "password": password}
+                )
+                if res.user is None:
+                    st.error("Login failed. Check email/password.")
+                else:
+                    st.session_state["user"] = res.user
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Login error: {e}")
 
 ensure_auth()
 if "user" not in st.session_state:
@@ -393,7 +396,6 @@ def get_history(limit: int = 100):
             df = pd.DataFrame(data)
             if "created_at" in df.columns:
                 df["created_at"] = pd.to_datetime(df["created_at"])
-            # Decrypt columns
             if "temperature" in df.columns:
                 df["temperature"] = df["temperature"].apply(dec_number)
             if "humidity" in df.columns:
@@ -610,10 +612,10 @@ def render_farmer_dashboard():
                 sim_decision = sim_result["irrigation_prediction"]
                 sim_conf = sim_result["confidence_level"]
                 if sim_decision == "yes":
-                    st.success(f"💦 Simulated Advice: Water Recommended")
+                    st.success("💦 Simulated Advice: Water Recommended")
                     st.write(f"With these conditions, the model suggests watering with **{sim_conf:.0%} confidence**")
                 else:
-                    st.info(f"✅ Simulated Advice: No Water Needed")
+                    st.info("✅ Simulated Advice: No Water Needed")
                     st.write(f"Current simulated conditions don't require watering (**{sim_conf:.0%} confidence**)")
 
     with sim_col2:
