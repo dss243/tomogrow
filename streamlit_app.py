@@ -4,9 +4,10 @@ import pickle
 import numpy as np
 import os
 import pandas as pd
+from cryptography.fernet import Fernet
 
 # =====================================================
-# Config - Force Light Theme with Green Colors
+# Page & Styling
 # =====================================================
 st.set_page_config(
     page_title="TomoGrow – Smart Irrigation",
@@ -193,11 +194,21 @@ st.markdown(
 )
 
 # =====================================================
-# Supabase config
+# Supabase + Encryption config
 # =====================================================
-SUPABASE_URL = "https://ragapkdlgtpmumwlzphs.supabase.co"
-SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE"  # keep your real anon key
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
 DEVICE_ID = "ESP32_TOMOGROW_001"
+
+DATA_ENCRYPTION_KEY = st.secrets["DATA_ENCRYPTION_KEY"]
+cipher = Fernet(DATA_ENCRYPTION_KEY)
+
+
+def dec_number(s):
+    if s is None:
+        return None
+    return float(cipher.decrypt(s.encode()).decode())
+
 
 @st.cache_resource
 def init_supabase():
@@ -207,6 +218,7 @@ def init_supabase():
     except Exception as e:
         st.error(f"Supabase connection error: {e}")
         return None
+
 
 supabase_client = init_supabase()
 
@@ -232,6 +244,7 @@ def ensure_auth():
                 st.rerun()
         except Exception as e:
             st.error(f"Login error: {e}")
+
 
 ensure_auth()
 if "user" not in st.session_state:
@@ -259,6 +272,7 @@ def get_current_role(user_id: str):
     except Exception:
         return "farmer"
 
+
 if "role" not in st.session_state:
     st.session_state["role"] = get_current_role(current_user.id)
 
@@ -285,7 +299,9 @@ def load_model_artifacts():
         return None
     return artifacts
 
+
 artifacts = load_model_artifacts()
+
 
 def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato"):
     if artifacts is None:
@@ -342,11 +358,12 @@ def model_predict(temperature, soil_moisture, humidity, light_intensity, crop_ty
         },
     }
 
+
 def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity):
     return model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato")
 
 # =====================================================
-# Data access (visible to all farmers, only filter by device)
+# Data access (decrypting)
 # =====================================================
 def get_latest_data():
     try:
@@ -366,6 +383,7 @@ def get_latest_data():
         st.error(f"Error fetching latest data: {e}")
     return None
 
+
 def get_history(limit: int = 100):
     try:
         if supabase_client:
@@ -384,6 +402,15 @@ def get_history(limit: int = 100):
             df = pd.DataFrame(data)
             if "created_at" in df.columns:
                 df["created_at"] = pd.to_datetime(df["created_at"])
+            # Decrypt columns
+            if "temperature" in df.columns:
+                df["temperature"] = df["temperature"].apply(dec_number)
+            if "humidity" in df.columns:
+                df["humidity"] = df["humidity"].apply(dec_number)
+            if "soil_moisture" in df.columns:
+                df["soil_moisture"] = df["soil_moisture"].apply(dec_number)
+            if "light_intensity" in df.columns:
+                df["light_intensity"] = df["light_intensity"].apply(dec_number)
             df = df.sort_values("created_at")
             return df
     except Exception as e:
@@ -406,7 +433,7 @@ st.markdown(
 )
 
 # =====================================================
-# FARMER DASHBOARD (with Simulation Lab)
+# FARMER DASHBOARD
 # =====================================================
 def render_farmer_dashboard():
     latest_data = get_latest_data()
@@ -418,10 +445,10 @@ def render_farmer_dashboard():
         st.markdown('<div class="card-title">📊 Live Field Snapshot</div>', unsafe_allow_html=True)
 
         if latest_data:
-            temperature = float(latest_data.get("temperature", 0))
-            humidity = float(latest_data.get("humidity", 0))
-            soil_moisture = float(latest_data.get("soil_moisture", 0))
-            light_intensity = float(latest_data.get("light_intensity", 0))
+            temperature = dec_number(latest_data.get("temperature"))
+            humidity = dec_number(latest_data.get("humidity"))
+            soil_moisture = dec_number(latest_data.get("soil_moisture"))
+            light_intensity = dec_number(latest_data.get("light_intensity"))
             timestamp = latest_data.get("created_at", "")
 
             st.markdown('<div class="metric-grid">', unsafe_allow_html=True)
@@ -539,7 +566,7 @@ def render_farmer_dashboard():
 
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
-    # SIMULATION SECTION (kept from your old version)
+    # SIMULATION SECTION (unchanged logic)
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title">🔬 Simulation Lab</div>', unsafe_allow_html=True)
     st.markdown('<p class="status-text">Test how different environmental conditions affect irrigation needs</p>', unsafe_allow_html=True)
