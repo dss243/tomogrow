@@ -4,3 +4,4 @@ plotly
 numpy
 supabase
 scikit-learn
+keras
