@@ -4,4 +4,4 @@ plotly
 numpy
 supabase
 scikit-learn
-keras
+tensorflow==2.15.0
