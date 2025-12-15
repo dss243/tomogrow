@@ -4,4 +4,4 @@ plotly
 numpy
 supabase
 scikit-learn
-tensorflow
+joblib
