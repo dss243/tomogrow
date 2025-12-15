@@ -5,6 +5,9 @@ import numpy as np
 import os
 import pandas as pd
 from cryptography.fernet import Fernet
+from tensorflow.keras.models import load_model
+import joblib
+from datetime import datetime
 
 # =====================================================
 # Config - Force Light Theme with Green Colors
@@ -228,8 +231,8 @@ def dec_number(s):
 def init_supabase():
     try:
         client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-        # Test connection by making a simple query
-        response = client.table("profiles").select("*").limit(1).execute()
+        # test query
+        client.table("profiles").select("*").limit(1).execute()
         st.success("✅ Connected to Supabase successfully")
         return client
     except Exception as e:
@@ -246,28 +249,24 @@ def ensure_auth():
     if "user" in st.session_state:
         return
 
-    # First, ensure Supabase client is initialized
     if supabase_client is None:
         st.error("Database connection failed. Cannot authenticate.")
         st.stop()
 
-    # Display login form
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     st.markdown('<div class="login-title">🌱 TomoGrow Login</div>', unsafe_allow_html=True)
     
-    email = st.text_input("Email", value="soundous@gmail.com", placeholder="Enter your email")
+    email = st.text_input("Email", value="", placeholder="Enter your email")
     password = st.text_input("Password", type="password", placeholder="Enter your password")
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("Sign In", type="primary", use_container_width=True):
-            # Validate inputs
             if not email or not password:
                 st.error("Please enter both email and password")
                 st.stop()
             
             try:
-                # Use the correct auth method signature
                 auth_response = supabase_client.auth.sign_in_with_password({
                     "email": email.strip(),
                     "password": password.strip()
@@ -282,7 +281,6 @@ def ensure_auth():
                     st.error("Login failed. Please check your credentials.")
                     
             except Exception as e:
-                # Provide more detailed error information
                 error_msg = str(e)
                 if "Invalid login credentials" in error_msg:
                     st.error("Invalid email or password. Please try again.")
@@ -293,24 +291,18 @@ def ensure_auth():
                 else:
                     st.error(f"Login error: {error_msg}")
                 
-                # Debug information
                 with st.expander("Troubleshooting Tips"):
-                    st.write("""
-                    1. Check if the user exists in Supabase Auth → Users
-                    2. Verify email is confirmed
-                    3. Check your internet connection
-                    4. Ensure Supabase project is running
-                    """)
+                    st.write(
+                        "1. Check if the user exists in Supabase Auth → Users\n"
+                        "2. Verify email is confirmed\n"
+                        "3. Check your internet connection\n"
+                        "4. Ensure Supabase project is running"
+                    )
     
     st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Don't proceed if not authenticated
     st.stop()
 
-# Call authentication function
 ensure_auth()
-
-# Now we have a user, proceed
 current_user = st.session_state["user"]
 
 # =====================================================
@@ -339,7 +331,7 @@ if "role" not in st.session_state:
 role = st.session_state["role"]
 
 # =====================================================
-# Load model artifacts
+# Load classification irrigation model artifacts
 # =====================================================
 @st.cache_resource
 def load_model_artifacts():
@@ -420,6 +412,127 @@ def predict_irrigation_model_only(temperature, soil_moisture, humidity, light_in
     return model_predict(temperature, soil_moisture, humidity, light_intensity, crop_type="tomato")
 
 # =====================================================
+# Load water volume regression model + preprocessing
+# =====================================================
+@st.cache_resource
+def load_water_volume_artifacts():
+    model_path = "water_volume_model_final.keras"
+    prep_path = "water_preprocessing_final.pkl"
+
+    if not os.path.exists(model_path):
+        st.warning("Water volume model file not found.")
+        return None
+
+    if not os.path.exists(prep_path):
+        st.warning("Water volume preprocessing file not found.")
+        return None
+
+    try:
+        water_model = load_model(model_path)
+    except Exception as e:
+        st.error(f"Error loading water volume model: {e}")
+        return None
+
+    try:
+        preprocessing = joblib.load(prep_path)
+    except Exception as e:
+        st.error(f"Error loading water preprocessing: {e}")
+        return None
+
+    return {
+        "model": water_model,
+        "feature_scaler": preprocessing["feature_scaler"],
+        "target_scaler": preprocessing["target_scaler"],
+        "feature_names": preprocessing["feature_names"],
+    }
+
+water_artifacts = load_water_volume_artifacts()
+
+def predict_water_volume(soil_moisture, soil_temperature, soil_humidity, ts=None):
+    if water_artifacts is None:
+        return None
+
+    model = water_artifacts["model"]
+    scaler_X = water_artifacts["feature_scaler"]
+    scaler_y = water_artifacts["target_scaler"]
+    feature_names = water_artifacts["feature_names"]
+
+    if ts is None:
+        ts = datetime.utcnow()
+    if not isinstance(ts, datetime):
+        try:
+            ts = pd.to_datetime(ts)
+        except Exception:
+            ts = datetime.utcnow()
+
+    hour = ts.hour
+    day_of_week = ts.weekday()
+    month = ts.month
+    day_of_year = ts.timetuple().tm_yday
+
+    hour_sin = np.sin(2 * np.pi * hour / 24)
+    hour_cos = np.cos(2 * np.pi * hour / 24)
+    month_sin = np.sin(2 * np.pi * month / 12)
+    month_cos = np.cos(2 * np.pi * month / 12)
+
+    temp_humidity_interaction = soil_temperature * soil_humidity
+    temp_moisture_interaction = soil_temperature * soil_moisture
+
+    feature_dict = {
+        "soil_moisture": soil_moisture,
+        "soil_temperature": soil_temperature,
+        "soil_humidity": soil_humidity,
+        "hour": hour,
+        "day_of_week": day_of_week,
+        "month": month,
+        "day_of_year": day_of_year,
+        "hour_sin": hour_sin,
+        "hour_cos": hour_cos,
+        "month_sin": month_sin,
+        "month_cos": month_cos,
+        "temp_humidity_interaction": temp_humidity_interaction,
+        "temp_moisture_interaction": temp_moisture_interaction,
+    }
+
+    x_list = []
+    for name in feature_names:
+        if name in feature_dict:
+            x_list.append(feature_dict[name])
+        else:
+            # neutral for missing lag/rolling features
+            x_list.append(0.0)
+
+    X_input = np.array(x_list, dtype=np.float32).reshape(1, -1)
+    try:
+        X_scaled = scaler_X.transform(X_input)
+    except Exception as e:
+        st.error(f"Error scaling features for water volume: {e}")
+        return None
+
+    try:
+        y_scaled = model.predict(X_scaled, verbose=0).flatten()[0]
+    except Exception as e:
+        st.error(f"Error during water volume prediction: {e}")
+        return None
+
+    try:
+        y_pred = scaler_y.inverse_transform([[y_scaled]])[0][0]
+    except Exception as e:
+        st.error(f"Error inverse-scaling water volume: {e}")
+        return None
+
+    return max(float(y_pred), 0.0)
+
+# simple heuristic for simulation only
+def estimate_soil_moisture_after_watering(current_sm, volume_ml):
+    if volume_ml is None:
+        return current_sm
+    # +1% per 1000 ml, capped [0, 100]
+    delta = volume_ml / 1000.0
+    new_sm = current_sm + delta
+    return float(max(0.0, min(100.0, new_sm)))
+
+# =====================================================
 # Data access (decrypting)
 # =====================================================
 def get_latest_data():
@@ -458,7 +571,6 @@ def get_history(limit: int = 100):
             df = pd.DataFrame(data)
             if "created_at" in df.columns:
                 df["created_at"] = pd.to_datetime(df["created_at"])
-            # Decrypt columns
             if "temperature" in df.columns:
                 df["temperature"] = df["temperature"].apply(dec_number)
             if "humidity" in df.columns:
@@ -542,7 +654,7 @@ def render_farmer_dashboard():
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Irrigation Advice
+        # Irrigation Advice (keep original, add volume)
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">💧 Irrigation Advice</div>', unsafe_allow_html=True)
 
@@ -551,7 +663,8 @@ def render_farmer_dashboard():
             humidity = dec_number(latest_data.get("humidity"))
             soil_moisture = dec_number(latest_data.get("soil_moisture"))
             light_intensity = dec_number(latest_data.get("light_intensity"))
-            
+            ts = latest_data.get("created_at")
+
             result = predict_irrigation_model_only(temperature, soil_moisture, humidity, light_intensity)
             if result:
                 decision = result["irrigation_prediction"]
@@ -560,6 +673,16 @@ def render_farmer_dashboard():
                 if decision == "yes":
                     st.success("💦 Water the plants now")
                     st.write("Current conditions suggest watering would benefit the plants for optimal growth.")
+                    # NEW: show recommended volume, but do not change soil moisture
+                    if water_artifacts is not None:
+                        vol_ml = predict_water_volume(
+                            soil_moisture=soil_moisture,
+                            soil_temperature=temperature,
+                            soil_humidity=humidity,
+                            ts=ts,
+                        )
+                        if vol_ml is not None:
+                            st.metric("Recommended water volume", f"{vol_ml:,.0f} ml")
                     st.progress(conf)
                 else:
                     st.info("✅ No water needed")
@@ -630,7 +753,7 @@ def render_farmer_dashboard():
     # SIMULATION SECTION
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title">🔬 Simulation Lab</div>', unsafe_allow_html=True)
-    st.markdown('<p class="status-text">Test how different environmental conditions affect irrigation needs</p>', unsafe_allow_html=True)
+    st.markdown('<p class="status-text">Test how different environmental conditions affect irrigation needs and water volume</p>', unsafe_allow_html=True)
 
     sim_col1, sim_col2 = st.columns([1.2, 1.2])
     sim_result = None
@@ -679,9 +802,24 @@ def render_farmer_dashboard():
             else:
                 sim_decision = sim_result["irrigation_prediction"]
                 sim_conf = sim_result["confidence_level"]
+
                 if sim_decision == "yes":
                     st.success(f"💦 Simulated Advice: Water Recommended")
                     st.write(f"With these conditions, the model suggests watering with **{sim_conf:.0%} confidence**")
+
+                    sim_vol = None
+                    if water_artifacts is not None:
+                        sim_vol = predict_water_volume(
+                            soil_moisture=sim_soil,
+                            soil_temperature=sim_temp,
+                            soil_humidity=sim_hum,
+                            ts=datetime.utcnow(),
+                        )
+                        if sim_vol is not None:
+                            st.metric("Simulated water volume", f"{sim_vol:,.0f} ml")
+
+                    est_sm_after = estimate_soil_moisture_after_watering(sim_soil, sim_vol)
+                    st.write(f"Estimated soil moisture after irrigation: **{est_sm_after:.1f}%**")
                 else:
                     st.info(f"✅ Simulated Advice: No Water Needed")
                     st.write(f"Current simulated conditions don't require watering (**{sim_conf:.0%} confidence**)")
